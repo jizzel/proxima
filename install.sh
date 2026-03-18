@@ -14,11 +14,8 @@ ARCH="$(uname -m)"
 
 case "$OS" in
   Darwin)
-    case "$ARCH" in
-      arm64)  ASSET="proxima-macos-arm64" ;;
-      x86_64) ASSET="proxima-macos-x64"   ;;
-      *)      echo "Unsupported macOS architecture: $ARCH" >&2; exit 1 ;;
-    esac
+    # Single ARM64 binary; runs natively on Apple Silicon, via Rosetta 2 on Intel.
+    ASSET="proxima-macos-arm64"
     ;;
   Linux)
     case "$ARCH" in

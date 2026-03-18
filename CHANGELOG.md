@@ -12,6 +12,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Drop separate macOS Intel binary; ARM64 binary works on Intel Macs via Rosetta 2
+- `install.sh`: macOS Intel now downloads `proxima-macos-arm64` (runs via Rosetta 2) instead of the removed `proxima-macos-x64`
 
 ---
 

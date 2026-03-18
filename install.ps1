@@ -38,13 +38,11 @@ Invoke-WebRequest -Uri $DownloadUrl -OutFile $Dest -UseBasicParsing
 
 # ── Add to user PATH if not already present ───────────────────────────────────
 
-$UserPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
-if ($UserPath -notlike "*$InstallDir*") {
-    [Environment]::SetEnvironmentVariable(
-        'PATH',
-        "$UserPath;$InstallDir",
-        'User'
-    )
+$UserPath  = [Environment]::GetEnvironmentVariable('PATH', 'User')
+$PathArray = $UserPath.Split(';') | Where-Object { $_.Trim() -ne '' }
+if ($PathArray -notcontains $InstallDir) {
+    $NewPath = ($PathArray + $InstallDir) -join ';'
+    [Environment]::SetEnvironmentVariable('PATH', $NewPath, 'User')
     Write-Host "Added $InstallDir to your PATH (restart your terminal to apply)."
 }
 

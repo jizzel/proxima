@@ -9,6 +9,15 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Drop separate macOS Intel binary; ARM64 binary works on Intel Macs via Rosetta 2
+- `install.sh`: macOS Intel now downloads `proxima-macos-arm64` (runs via Rosetta 2) instead of the removed `proxima-macos-x64`
+
+---
+
+## [0.1.1] — 2026-03-18
+
 ### Added
 
 - README: architecture diagram image and roadmap section (V1.2/V1.3 planned features)
@@ -44,5 +53,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/jizzel/proxima/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jizzel/proxima/releases/tag/v0.1.0

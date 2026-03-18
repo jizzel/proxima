@@ -31,6 +31,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `--debug` mode shows reasoning and full tool output
 - User config at `~/.proxima/config.yaml`; project override at `.proxima/config.yaml`
 - 71 unit tests covering all layers
+- enhance install script with unified fetch function for curl and wget
 
 [Unreleased]: https://github.com/jizzel/proxima/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/jizzel/proxima/releases/tag/v0.1.0

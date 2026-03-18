@@ -9,6 +9,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- README: architecture diagram image and roadmap section (V2/V3 planned features)
+
+### Fixed
+
+- CI release workflow: replace deprecated `macos-13` runner with `macos-12` for Intel macOS build
+
 ---
 
 ## [0.1.0] — 2026-03-18

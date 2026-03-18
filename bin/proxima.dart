@@ -1,57 +1,72 @@
+import 'dart:io';
 import 'package:args/args.dart';
+import 'package:proxima/cli/arg_parser.dart';
+import 'package:proxima/cli/repl.dart';
+import 'package:proxima/core/config.dart';
+import 'package:proxima/core/types.dart';
 
-const String version = '0.0.1';
+Future<void> main(List<String> arguments) async {
+  final argParser = buildArgParser();
 
-ArgParser buildParser() {
-  return ArgParser()
-    ..addFlag(
-      'help',
-      abbr: 'h',
-      negatable: false,
-      help: 'Print this usage information.',
-    )
-    ..addFlag(
-      'verbose',
-      abbr: 'v',
-      negatable: false,
-      help: 'Show additional command output.',
-    )
-    ..addFlag('version', negatable: false, help: 'Print the tool version.');
-}
-
-void printUsage(ArgParser argParser) {
-  print('Usage: dart proxima.dart <flags> [arguments]');
-  print(argParser.usage);
-}
-
-void main(List<String> arguments) {
-  final ArgParser argParser = buildParser();
+  ArgResults results;
   try {
-    final ArgResults results = argParser.parse(arguments);
-    bool verbose = false;
-
-    // Process the parsed arguments.
-    if (results.flag('help')) {
-      printUsage(argParser);
-      return;
-    }
-    if (results.flag('version')) {
-      print('proxima version: $version');
-      return;
-    }
-    if (results.flag('verbose')) {
-      verbose = true;
-    }
-
-    // Act on the arguments provided.
-    print('Positional arguments: ${results.rest}');
-    if (verbose) {
-      print('[VERBOSE] All arguments: ${results.arguments}');
-    }
+    results = argParser.parse(arguments);
   } on FormatException catch (e) {
-    // Print usage information if an invalid argument was provided.
-    print(e.message);
-    print('');
+    stderr.writeln(e.message);
+    stderr.writeln('');
     printUsage(argParser);
+    exit(1);
+  }
+
+  if (results.flag('help')) {
+    printUsage(argParser);
+    exit(0);
+  }
+
+  if (results.flag('version')) {
+    print('proxima $proximaVersion');
+    exit(0);
+  }
+
+  // Load config.
+  final workingDir = results.option('dir') ?? Directory.current.path;
+  var config = await ProximaConfig.load(workingDir: workingDir);
+
+  // CLI flags override config.
+  final model = results.option('model');
+  final modeStr = results.option('mode');
+  final mode = switch (modeStr) {
+    'safe' => SessionMode.safe,
+    'auto' => SessionMode.auto,
+    _ => null,
+  };
+
+  config = config.copyWith(
+    model: model,
+    mode: mode,
+    debug: results.flag('debug') ? true : null,
+    dryRun: results.flag('dry-run') ? true : null,
+  );
+
+  // Determine task: --task flag or first positional argument.
+  final taskFlag = results.option('task');
+  final positional = results.rest.join(' ');
+  final task = taskFlag ?? (positional.isNotEmpty ? positional : null);
+
+  final resumeId = results.option('resume');
+
+  // Initialize REPL.
+  final repl = ProximaRepl(config);
+  try {
+    await repl.initialize(resumeSessionId: resumeId);
+  } catch (e) {
+    stderr.writeln('Failed to initialize Proxima: $e');
+    exit(1);
+  }
+
+  if (task != null) {
+    await repl.runTask(task);
+  } else {
+    await repl.runRepl();
   }
 }

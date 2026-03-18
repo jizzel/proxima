@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: macos-latest
+            dart_arch: arm64
+            asset_name: proxima-macos-arm64
+
+          - target: macos-x64
+            runner: macos-13        # Intel runner
+            dart_arch: x64
+            asset_name: proxima-macos-x64
+
+          - target: linux-x64
+            runner: ubuntu-latest
+            dart_arch: x64
+            asset_name: proxima-linux-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+          architecture: ${{ matrix.dart_arch }}
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Run tests
+        run: dart test
+
+      - name: Compile binary
+        run: dart compile exe bin/proxima.dart -o proxima
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: proxima
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          # Pull the section for this release from CHANGELOG.md
+          version="${{ steps.version.outputs.version }}"
+          notes=$(awk "/^## \[$version\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          {
+            echo "notes<<EOF"
+            echo "$notes"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename artifacts
+        run: |
+          mv artifacts/proxima-macos-arm64/proxima artifacts/proxima-macos-arm64
+          mv artifacts/proxima-macos-x64/proxima   artifacts/proxima-macos-x64
+          mv artifacts/proxima-linux-x64/proxima   artifacts/proxima-linux-x64
+          chmod +x artifacts/proxima-*
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Proxima ${{ github.ref_name }}
+          body: |
+            ## What's changed
+
+            ${{ steps.changelog.outputs.notes }}
+
+            ---
+
+            ## Installation
+
+            **macOS (Apple Silicon)**
+            ```bash
+            curl -fsSL https://github.com/jizzel/proxima/releases/download/${{ github.ref_name }}/proxima-macos-arm64 \
+              -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
+            ```
+
+            **macOS (Intel)**
+            ```bash
+            curl -fsSL https://github.com/jizzel/proxima/releases/download/${{ github.ref_name }}/proxima-macos-x64 \
+              -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
+            ```
+
+            **Linux (x86_64)**
+            ```bash
+            curl -fsSL https://github.com/jizzel/proxima/releases/download/${{ github.ref_name }}/proxima-linux-x64 \
+              -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
+            ```
+
+            Or use the [install script](#install-script) for automatic platform detection.
+          files: |
+            artifacts/proxima-macos-arm64
+            artifacts/proxima-macos-x64
+            artifacts/proxima-linux-x64
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

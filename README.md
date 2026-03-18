@@ -28,21 +28,38 @@ A terminal-native, model-agnostic coding agent built in Dart. Proxima understand
 
 ## Installation
 
+### Install script (macOS and Linux)
+
 ```bash
-git clone <repo>
+curl -fsSL https://raw.githubusercontent.com/jizzel/proxima/main/install.sh | sh
+```
+
+Detects your platform automatically and installs the binary to `/usr/local/bin/proxima`. Use `PROXIMA_INSTALL_DIR` to override the destination.
+
+### Manual download
+
+Download the pre-built binary for your platform from [Releases](https://github.com/jizzel/proxima/releases):
+
+| Platform | Binary |
+|---|---|
+| macOS Apple Silicon | `proxima-macos-arm64` |
+| macOS Intel | `proxima-macos-x64` |
+| Linux x86_64 | `proxima-linux-x64` |
+
+```bash
+# Example — macOS Apple Silicon
+curl -fsSL https://github.com/jizzel/proxima/releases/latest/download/proxima-macos-arm64 \
+  -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
+```
+
+### Build from source
+
+Requires Dart SDK `^3.11.1`:
+
+```bash
+git clone https://github.com/jizzel/proxima.git
 cd proxima
 dart pub get
-```
-
-Run directly:
-
-```bash
-dart run bin/proxima.dart
-```
-
-Or compile to a native binary:
-
-```bash
 dart compile exe bin/proxima.dart -o proxima
 ./proxima
 ```
@@ -244,6 +261,18 @@ The agent loop never touches the filesystem directly. Every tool call passes thr
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, how to add tools and providers, code style requirements, and PR guidelines.
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

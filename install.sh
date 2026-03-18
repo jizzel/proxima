@@ -36,17 +36,28 @@ esac
 # ── Resolve latest release tag ────────────────────────────────────────────────
 
 if command -v curl &>/dev/null; then
-  FETCH="curl -fsSL"
+  USE_CURL=1
 elif command -v wget &>/dev/null; then
-  FETCH="wget -qO-"
+  USE_CURL=0
 else
   echo "curl or wget is required" >&2; exit 1
 fi
 
+fetch() {
+  if [ "$USE_CURL" -eq 1 ]; then
+    curl -fsSL "$1" ${2:+-o "$2"}
+  else
+    if [ -n "${2:-}" ]; then
+      wget -qO "$2" "$1"
+    else
+      wget -qO- "$1"
+    fi
+  fi
+}
+
 LATEST_TAG=$(
-  $FETCH "https://api.github.com/repos/$REPO/releases/latest" \
-  | grep '"tag_name"' \
-  | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
+  fetch "https://api.github.com/repos/$REPO/releases/latest" \
+  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p'
 )
 
 if [ -z "$LATEST_TAG" ]; then
@@ -62,10 +73,7 @@ trap 'rm -f "$TMP"' EXIT
 
 echo "Installing Proxima $LATEST_TAG ($ASSET) → $INSTALL_DIR/$BINARY_NAME"
 
-$FETCH "$DOWNLOAD_URL" -o "$TMP" 2>/dev/null || {
-  # wget variant doesn't support -o
-  $FETCH "$DOWNLOAD_URL" > "$TMP"
-}
+fetch "$DOWNLOAD_URL" "$TMP"
 
 chmod +x "$TMP"
 

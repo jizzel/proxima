@@ -22,12 +22,6 @@ jobs:
             asset_name: proxima-macos-arm64
             binary: proxima
 
-          - target: macos-x64
-            runner: macos-12        # Intel runner (x86_64); macos-13 is region-gated
-            dart_arch: x64
-            asset_name: proxima-macos-x64
-            binary: proxima
-
           - target: linux-x64
             runner: ubuntu-latest
             dart_arch: x64
@@ -95,10 +89,9 @@ jobs:
       - name: Stage release assets
         run: |
           mv artifacts/proxima-macos-arm64/proxima      artifacts/proxima-macos-arm64
-          mv artifacts/proxima-macos-x64/proxima        artifacts/proxima-macos-x64
           mv artifacts/proxima-linux-x64/proxima        artifacts/proxima-linux-x64
           mv artifacts/proxima-windows-x64.exe/proxima.exe artifacts/proxima-windows-x64.exe
-          chmod +x artifacts/proxima-macos-arm64 artifacts/proxima-macos-x64 artifacts/proxima-linux-x64
+          chmod +x artifacts/proxima-macos-arm64 artifacts/proxima-linux-x64
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -118,15 +111,9 @@ jobs:
             curl -fsSL https://raw.githubusercontent.com/jizzel/proxima/main/install.sh | sh
             ```
 
-            **macOS (Apple Silicon)**
+            **macOS (Apple Silicon + Intel via Rosetta 2)**
             ```bash
             curl -fsSL https://github.com/jizzel/proxima/releases/download/${{ github.ref_name }}/proxima-macos-arm64 \
-              -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
-            ```
-
-            **macOS (Intel)**
-            ```bash
-            curl -fsSL https://github.com/jizzel/proxima/releases/download/${{ github.ref_name }}/proxima-macos-x64 \
               -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
             ```
 
@@ -143,7 +130,6 @@ jobs:
             Or download `proxima-windows-x64.exe` below and add it to a directory on your `PATH`.
           files: |
             artifacts/proxima-macos-arm64
-            artifacts/proxima-macos-x64
             artifacts/proxima-linux-x64
             artifacts/proxima-windows-x64.exe
           draft: false

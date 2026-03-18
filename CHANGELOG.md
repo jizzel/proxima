@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Drop separate macOS Intel binary; ARM64 binary works on Intel Macs via Rosetta 2
+
 ---
 
 ## [0.1.1] — 2026-03-18

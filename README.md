@@ -50,8 +50,7 @@ Download the pre-built binary for your platform from [Releases](https://github.c
 
 | Platform | Binary |
 |---|---|
-| macOS Apple Silicon | `proxima-macos-arm64` |
-| macOS Intel | `proxima-macos-x64` |
+| macOS (Apple Silicon + Intel via Rosetta 2) | `proxima-macos-arm64` |
 | Linux x86_64 | `proxima-linux-x64` |
 | Windows x86_64 | `proxima-windows-x64.exe` |
 

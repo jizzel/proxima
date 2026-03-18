@@ -16,6 +16,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - `--version` now reports the correct version (was hardcoded to `0.1.0` in `arg_parser.dart`)
+- inject version at compile time and update related docs
 
 ---
 

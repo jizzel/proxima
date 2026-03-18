@@ -252,21 +252,91 @@ dart run bin/proxima.dart --debug --dry-run "list the files in this project"
 
 ### Architecture
 
-Proxima is structured as nine explicit layers with strict boundaries:
+Proxima is structured as nine explicit layers with strict downward-only dependencies:
+
+![Proxima Architecture](https://res.cloudinary.com/attakorah/image/upload/v1773832428/others/Screenshot_2026-03-18_at_11.12.25_AM_ejqbjg.png)
 
 ```
-1. CLI Entry          → argument parsing, config loading
-2. Session Manager    → history, state, undo (stateful source of truth)
-3. Agent Loop         → think → act → observe (stateless)
-4. Provider Interface → unified LLM abstraction (Anthropic + Ollama)
-5. Permission Gate    → risk classification, audit logging
-6. Tool System        → file, shell, search tools
-7. Context Manager    → token budget, project index, compaction
-8. Error Handler      → retry, recovery, escalation
-9. Renderer           → ANSI output, diffs, interactive prompts
+┌─────────────────────────────────────────────────────────────────┐
+│  L1  CLI Entry                                                  │
+│      args · config.yaml · --debug · --dry-run · --resume       │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│  L2  Session Manager                                            │
+│      conversation history · undo stack · token usage           │
+│      ~/.proxima/sessions/                                       │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│  L3  Agent Loop                                                 │
+│      think → act → observe · stuck detection · max 10 iter     │
+│      schema validator · retry logic                             │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌───────────────┬───────────────▼───────────────┐
+│  L4  Cloud    │         L4  Local             │
+│  Anthropic    │  Ollama · LM Studio           │
+│  (streaming + │  (ReAct fallback for          │
+│  native tools)│   no-tool models)             │
+└───────────────┴───────────────────────────────┘
+                  unified LLMProvider interface
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│  L5  Permission Gate  ⚠  (load-bearing)                        │
+│      safe → auto-run  ·  confirm → y/n diff prompt             │
+│      high-risk → typed CONFIRM  ·  blocked → hard reject       │
+│      audit log → ~/.proxima/audit.jsonl                        │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌──────────────────┬────────────▼──────────┬────────────────────┐
+│  L6  File tools  │   L6  Shell tools     │  L6  Search tools  │
+│  read_file       │   run_command         │  search (regex)    │
+│  write_file      │   run_tests           │                    │
+│  patch_file      │                       │                    │
+│  list_files      │                       │                    │
+│  glob            │                       │                    │
+└──────────────────┴───────────────────────┴────────────────────┘
+          ProximaTool interface · each tool declares risk level
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│  L7  Context Manager                                            │
+│      token budget · project index · 3-pass compaction          │
+│      relevance scoring · file chunking                         │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│  L8  Error Handler                                              │
+│      tool retry ×3 · LLM backoff · schema re-prompt            │
+│      emergency compaction · user escalation                    │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│  L9  Renderer                                                   │
+│      ANSI output · diff viewer · permission prompts            │
+│      spinner · markdown · streaming                            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-The agent loop never touches the filesystem directly. Every tool call passes through the permission gate first.
+**Critical constraint:** The agent loop (L3) never touches the filesystem or executes tools directly. Every tool call goes through the permission gate (L5) first — this is load-bearing architecture.
+
+---
+
+## Roadmap
+
+The following items are planned for future releases as minor additions in v1:
+
+### V1.2.0 — Expanded tools and providers
+- **Additional cloud providers** — OpenAI, Gemini, Groq, Mistral (same `LLMProvider` interface, new adapters)
+- **Local providers** — LM Studio and llama.cpp in addition to Ollama
+- **`delete_file` tool** — high-risk level, requires typed CONFIRM
+- **`git` tools** — `git_status`, `git_diff`, `git_log`, `git_commit` (read-only by default; write operations are confirm-level)
+- **Subagent support** — agent spawns child agents for parallel sub-tasks
+
+### V1.3.0 — Intelligence and search
+- **AST-aware search** — query code structure (functions, classes, imports) without regex
+- **Semantic search** — embedding-based file retrieval for large codebases
+- **Plugin tools** — load third-party tools from a `~/.proxima/plugins/` directory
 
 ---
 

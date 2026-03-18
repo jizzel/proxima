@@ -238,7 +238,9 @@ class AgentLoop {
         const backupMarker = '\nBACKUP_PATH:';
         final markerIndex = toolResult.indexOf(backupMarker);
         if (markerIndex != -1) {
-          backupPath = toolResult.substring(markerIndex + backupMarker.length).trim();
+          backupPath = toolResult
+              .substring(markerIndex + backupMarker.length)
+              .trim();
           displayResult = toolResult.substring(0, markerIndex);
         }
 

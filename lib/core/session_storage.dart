@@ -36,7 +36,9 @@ class SessionStorage {
       return ProximaSession.fromJson(json);
     } catch (e) {
       // Corrupted or incompatible session file — log and return null.
-      stderr.writeln('[proxima] Warning: could not load session $sessionId: $e');
+      stderr.writeln(
+        '[proxima] Warning: could not load session $sessionId: $e',
+      );
       return null;
     }
   }

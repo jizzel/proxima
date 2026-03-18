@@ -56,12 +56,16 @@ class Renderer implements AgentCallbacks {
     if (isError) {
       // Overwrite the pending "  ⚙ name" line with a red error.
       stdout.write('\r\x1b[K');
-      stdout.writeln('  ${red("✗")} ${dim(toolName)}  ${red(_firstLine(result))}');
+      stdout.writeln(
+        '  ${red("✗")} ${dim(toolName)}  ${red(_firstLine(result))}',
+      );
     } else {
       // Overwrite with a quiet success tick — no second line.
       stdout.write('\r\x1b[K');
       if (_debug) {
-        final preview = result.length > 120 ? '${result.substring(0, 120)}…' : result;
+        final preview = result.length > 120
+            ? '${result.substring(0, 120)}…'
+            : result;
         stdout.writeln('  ${dim("✓")} ${dim(toolName)}  ${dim(preview)}');
       } else {
         stdout.writeln('  ${dim("✓ $toolName")}');
@@ -158,11 +162,13 @@ class Renderer implements AgentCallbacks {
       if (headerMatch != null) {
         final level = headerMatch.group(1)!.length;
         final title = headerMatch.group(2)!;
-        buf.writeln(level == 1
-            ? boldCyan(title)
-            : level == 2
-                ? bold(title)
-                : bold(title));
+        buf.writeln(
+          level == 1
+              ? boldCyan(title)
+              : level == 2
+              ? bold(title)
+              : bold(title),
+        );
         continue;
       }
 
@@ -174,7 +180,9 @@ class Renderer implements AgentCallbacks {
       }
 
       // Bullet / task lists.
-      final bulletMatch = RegExp(r'^(\s*)([-*+]|\d+\.)\s+(.+)$').firstMatch(line);
+      final bulletMatch = RegExp(
+        r'^(\s*)([-*+]|\d+\.)\s+(.+)$',
+      ).firstMatch(line);
       if (bulletMatch != null) {
         final indent = bulletMatch.group(1)!;
         final content = _inlineMarkdown(bulletMatch.group(3)!);
@@ -191,17 +199,25 @@ class Renderer implements AgentCallbacks {
 
   String _inlineMarkdown(String text) {
     // Bold+italic ***…***
-    text = text.replaceAllMapped(RegExp(r'\*\*\*(.+?)\*\*\*'),
-        (m) => bold(m.group(1)!));
+    text = text.replaceAllMapped(
+      RegExp(r'\*\*\*(.+?)\*\*\*'),
+      (m) => bold(m.group(1)!),
+    );
     // Bold **…**
-    text = text.replaceAllMapped(RegExp(r'\*\*(.+?)\*\*'),
-        (m) => bold(m.group(1)!));
+    text = text.replaceAllMapped(
+      RegExp(r'\*\*(.+?)\*\*'),
+      (m) => bold(m.group(1)!),
+    );
     // Italic *…* or _…_
-    text = text.replaceAllMapped(RegExp(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)'),
-        (m) => m.group(1)!); // just strip for now — italic is hard on all terminals
+    text = text.replaceAllMapped(
+      RegExp(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)'),
+      (m) => m.group(1)!,
+    ); // just strip for now — italic is hard on all terminals
     // Inline code `…`
-    text = text.replaceAllMapped(RegExp(r'`([^`]+)`'),
-        (m) => cyan(m.group(1)!));
+    text = text.replaceAllMapped(
+      RegExp(r'`([^`]+)`'),
+      (m) => cyan(m.group(1)!),
+    );
     return text;
   }
 
@@ -212,11 +228,13 @@ class Renderer implements AgentCallbacks {
 
   String _fmtArgs(Map<String, dynamic> args) {
     if (args.isEmpty) return '';
-    final pairs = args.entries.map((e) {
-      final v = e.value.toString();
-      final short = v.length > 40 ? '${v.substring(0, 40)}…' : v;
-      return '${e.key}=$short';
-    }).join(' ');
+    final pairs = args.entries
+        .map((e) {
+          final v = e.value.toString();
+          final short = v.length > 40 ? '${v.substring(0, 40)}…' : v;
+          return '${e.key}=$short';
+        })
+        .join(' ');
     return pairs;
   }
 }

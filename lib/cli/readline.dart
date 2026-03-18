@@ -227,14 +227,16 @@ class ReadLine {
           case ControlCharacter.backspace:
           case ControlCharacter.ctrlH:
             if (cursorPos > 0) {
-              buffer = buffer.substring(0, cursorPos - 1) +
+              buffer =
+                  buffer.substring(0, cursorPos - 1) +
                   buffer.substring(cursorPos);
               cursorPos--;
             }
           case ControlCharacter.delete:
           case ControlCharacter.ctrlD:
             if (cursorPos < buffer.length) {
-              buffer = buffer.substring(0, cursorPos) +
+              buffer =
+                  buffer.substring(0, cursorPos) +
                   buffer.substring(cursorPos + 1);
             }
           case ControlCharacter.ctrlU:
@@ -258,16 +260,24 @@ class ReadLine {
             if (cursorPos > 0) {
               // Skip spaces before current word, then skip the word.
               var i = cursorPos - 1;
-              while (i > 0 && buffer[i] == ' ') { i--; }
-              while (i > 0 && buffer[i - 1] != ' ') { i--; }
+              while (i > 0 && buffer[i] == ' ') {
+                i--;
+              }
+              while (i > 0 && buffer[i - 1] != ' ') {
+                i--;
+              }
               cursorPos = i;
             }
           case ControlCharacter.wordRight:
             if (cursorPos < buffer.length) {
               // Skip current word, then skip spaces.
               var i = cursorPos;
-              while (i < buffer.length && buffer[i] != ' ') { i++; }
-              while (i < buffer.length && buffer[i] == ' ') { i++; }
+              while (i < buffer.length && buffer[i] != ' ') {
+                i++;
+              }
+              while (i < buffer.length && buffer[i] == ' ') {
+                i++;
+              }
               cursorPos = i;
             }
           default:
@@ -277,7 +287,8 @@ class ReadLine {
       }
 
       // ── Printable character ─────────────────────────────────────────────────
-      buffer = buffer.substring(0, cursorPos) +
+      buffer =
+          buffer.substring(0, cursorPos) +
           key.char +
           buffer.substring(cursorPos);
       cursorPos++;

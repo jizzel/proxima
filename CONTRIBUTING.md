@@ -143,10 +143,11 @@ One line summary, imperative mood, no period at the end.
 
 ## Releasing a new version
 
-Before tagging a release, update the version in **both** places:
+Before tagging a release, update the version in **one place only**:
 
 1. `pubspec.yaml` — `version: x.y.z`
-2. `lib/cli/arg_parser.dart` — `const String proximaVersion = 'x.y.z';`
+
+The version reported by `proxima --version` is injected automatically from the git tag at compile time by the release workflow — no need to touch `arg_parser.dart`. When running from source with `dart run`, it will show `dev`.
 
 Then update `CHANGELOG.md` (move `[Unreleased]` entries into a new versioned section and update the comparison links), commit, and push the tag:
 

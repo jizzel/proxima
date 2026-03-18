@@ -267,6 +267,9 @@ dart format .
 
 # Smoke test (requires ANTHROPIC_API_KEY)
 dart run bin/proxima.dart --debug --dry-run "list the files in this project"
+
+# Build with version injected (version is otherwise 'dev' when run with dart run)
+dart compile exe bin/proxima.dart -o proxima --define=APP_VERSION=0.1.4
 ```
 
 ### Architecture

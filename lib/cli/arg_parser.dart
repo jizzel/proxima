@@ -1,6 +1,9 @@
 import 'package:args/args.dart';
 
-const String proximaVersion = '0.1.3';
+const String proximaVersion = String.fromEnvironment(
+  'APP_VERSION',
+  defaultValue: 'dev',
+);
 
 ArgParser buildArgParser() {
   return ArgParser()

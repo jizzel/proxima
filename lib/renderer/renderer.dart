@@ -162,9 +162,7 @@ class Renderer implements AgentCallbacks {
       if (headerMatch != null) {
         final level = headerMatch.group(1)!.length;
         final title = headerMatch.group(2)!;
-        buf.writeln(
-          level == 1 ? boldCyan(title) : bold(title),
-        );
+        buf.writeln(level == 1 ? boldCyan(title) : bold(title));
         continue;
       }
 

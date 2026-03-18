@@ -163,11 +163,7 @@ class Renderer implements AgentCallbacks {
         final level = headerMatch.group(1)!.length;
         final title = headerMatch.group(2)!;
         buf.writeln(
-          level == 1
-              ? boldCyan(title)
-              : level == 2
-              ? bold(title)
-              : bold(title),
+          level == 1 ? boldCyan(title) : bold(title),
         );
         continue;
       }

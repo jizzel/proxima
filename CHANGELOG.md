@@ -11,7 +11,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- README: architecture diagram image and roadmap section (V2/V3 planned features)
+- README: architecture diagram image and roadmap section (V1.2/V1.3 planned features)
 
 ### Fixed
 

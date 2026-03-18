@@ -82,12 +82,13 @@ class ProximaRepl {
   }
 
   void _fetchOllamaModels() {
-    final baseUrl =
-        _config.ollamaBaseUrl ?? 'http://localhost:11434';
+    final baseUrl = _config.ollamaBaseUrl ?? 'http://localhost:11434';
     OllamaProvider(model: '', baseUrl: baseUrl)
         .listModels()
         .then((models) => _ollamaModels = models)
-        .catchError((_) => <String>[]); // silently ignore if Ollama isn't running
+        .catchError(
+          (_) => <String>[],
+        ); // silently ignore if Ollama isn't running
   }
 
   /// Lazily creates the agent loop (and provider) on first use.

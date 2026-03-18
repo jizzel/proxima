@@ -32,6 +32,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - User config at `~/.proxima/config.yaml`; project override at `.proxima/config.yaml`
 - 71 unit tests covering all layers
 - enhance install script with unified fetch function for curl and wget
+- format code for improved readability and consistency
+- add Windows installation script and update CI configuration for cross-platform support
+- simplify header formatting logic in renderer for better maintainability
+- improve PATH update logic in installation script
 
 [Unreleased]: https://github.com/jizzel/proxima/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/jizzel/proxima/releases/tag/v0.1.0

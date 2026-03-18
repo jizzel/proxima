@@ -126,7 +126,6 @@ class RunTestsTool implements ProximaTool {
   /// Single-quote a shell argument (safe for bash -c contexts).
   String _shellQuote(String value) => "'${value.replaceAll("'", "'\\''")}'";
 
-
   @override
   Future<DryRunResult> dryRun(
     Map<String, dynamic> args,

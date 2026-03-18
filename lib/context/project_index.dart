@@ -78,7 +78,8 @@ class ProjectIndex {
       '.vscode',
     };
     return parts.any(
-      (part) => (part.startsWith('.') && part != '.') || skipDirs.contains(part),
+      (part) =>
+          (part.startsWith('.') && part != '.') || skipDirs.contains(part),
     );
   }
 

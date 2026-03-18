@@ -54,20 +54,26 @@ class ReActFallback implements LLMProvider {
   CompletionRequest _augmentRequest(CompletionRequest request) {
     if (request.tools.isEmpty) return request;
 
-    final toolDocs = request.tools.map((t) {
-      final props = t.inputSchema['properties'] as Map? ?? {};
-      final required = (t.inputSchema['required'] as List?)?.cast<String>() ?? [];
-      final argList = props.entries.map((e) {
-        final isReq = required.contains(e.key);
-        final type = (e.value as Map?)?['type'] ?? 'string';
-        return isReq ? '${e.key}: $type' : '${e.key}?: $type';
-      }).join(', ');
-      return '  { "name": "${t.name}", "args": {$argList} }  // ${t.description}';
-    }).join('\n');
+    final toolDocs = request.tools
+        .map((t) {
+          final props = t.inputSchema['properties'] as Map? ?? {};
+          final required =
+              (t.inputSchema['required'] as List?)?.cast<String>() ?? [];
+          final argList = props.entries
+              .map((e) {
+                final isReq = required.contains(e.key);
+                final type = (e.value as Map?)?['type'] ?? 'string';
+                return isReq ? '${e.key}: $type' : '${e.key}?: $type';
+              })
+              .join(', ');
+          return '  { "name": "${t.name}", "args": {$argList} }  // ${t.description}';
+        })
+        .join('\n');
 
     final toolNames = request.tools.map((t) => '"${t.name}"').join(', ');
 
-    final reactPrompt = '''
+    final reactPrompt =
+        '''
 You are a coding agent. You can call tools to help the user.
 
 TOOL CALL FORMAT — when you need a tool, output ONLY this block and nothing else:

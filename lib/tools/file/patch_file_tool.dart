@@ -30,7 +30,8 @@ class PatchFileTool implements ProximaTool {
       'new_str': {'type': 'string', 'description': 'Replacement string'},
       'replace_all': {
         'type': 'boolean',
-        'description': 'Replace all occurrences (default: false, replaces first only)',
+        'description':
+            'Replace all occurrences (default: false, replaces first only)',
       },
     },
     'required': ['path', 'old_str', 'new_str'],

@@ -15,8 +15,8 @@ class ReplHeader {
     final modelLabel = model.startsWith('ollama/')
         ? model.substring('ollama/'.length)
         : model.startsWith('anthropic/')
-            ? model.substring('anthropic/'.length)
-            : model;
+        ? model.substring('anthropic/'.length)
+        : model;
 
     // Shorten workingDir to just the last 2 path segments if too long.
     final dirParts = workingDir.replaceAll('\\', '/').split('/');

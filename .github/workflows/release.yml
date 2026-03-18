@@ -20,16 +20,25 @@ jobs:
             runner: macos-latest
             dart_arch: arm64
             asset_name: proxima-macos-arm64
+            binary: proxima
 
           - target: macos-x64
             runner: macos-13        # Intel runner
             dart_arch: x64
             asset_name: proxima-macos-x64
+            binary: proxima
 
           - target: linux-x64
             runner: ubuntu-latest
             dart_arch: x64
             asset_name: proxima-linux-x64
+            binary: proxima
+
+          - target: windows-x64
+            runner: windows-latest
+            dart_arch: x64
+            asset_name: proxima-windows-x64.exe
+            binary: proxima.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -46,13 +55,13 @@ jobs:
         run: dart test
 
       - name: Compile binary
-        run: dart compile exe bin/proxima.dart -o proxima
+        run: dart compile exe bin/proxima.dart -o ${{ matrix.binary }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: proxima
+          path: ${{ matrix.binary }}
           if-no-files-found: error
 
   release:
@@ -70,7 +79,6 @@ jobs:
       - name: Extract changelog entry
         id: changelog
         run: |
-          # Pull the section for this release from CHANGELOG.md
           version="${{ steps.version.outputs.version }}"
           notes=$(awk "/^## \[$version\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
           {
@@ -84,12 +92,13 @@ jobs:
         with:
           path: artifacts
 
-      - name: Rename artifacts
+      - name: Stage release assets
         run: |
-          mv artifacts/proxima-macos-arm64/proxima artifacts/proxima-macos-arm64
-          mv artifacts/proxima-macos-x64/proxima   artifacts/proxima-macos-x64
-          mv artifacts/proxima-linux-x64/proxima   artifacts/proxima-linux-x64
-          chmod +x artifacts/proxima-*
+          mv artifacts/proxima-macos-arm64/proxima      artifacts/proxima-macos-arm64
+          mv artifacts/proxima-macos-x64/proxima        artifacts/proxima-macos-x64
+          mv artifacts/proxima-linux-x64/proxima        artifacts/proxima-linux-x64
+          mv artifacts/proxima-windows-x64.exe/proxima.exe artifacts/proxima-windows-x64.exe
+          chmod +x artifacts/proxima-macos-arm64 artifacts/proxima-macos-x64 artifacts/proxima-linux-x64
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -103,6 +112,11 @@ jobs:
             ---
 
             ## Installation
+
+            **macOS / Linux — install script**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/jizzel/proxima/main/install.sh | sh
+            ```
 
             **macOS (Apple Silicon)**
             ```bash
@@ -122,10 +136,15 @@ jobs:
               -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
             ```
 
-            Or use the [install script](#install-script) for automatic platform detection.
+            **Windows (x86_64) — PowerShell**
+            ```powershell
+            irm https://raw.githubusercontent.com/jizzel/proxima/main/install.ps1 | iex
+            ```
+            Or download `proxima-windows-x64.exe` below and add it to a directory on your `PATH`.
           files: |
             artifacts/proxima-macos-arm64
             artifacts/proxima-macos-x64
             artifacts/proxima-linux-x64
+            artifacts/proxima-windows-x64.exe
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

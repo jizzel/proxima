@@ -60,6 +60,26 @@ curl -fsSL https://github.com/jizzel/proxima/releases/latest/download/proxima-ma
   -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
 ```
 
+### Updating
+
+Re-run the install script — it always fetches the latest release and overwrites the existing binary:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/jizzel/proxima/main/install.sh | sh
+
+# Windows
+irm https://raw.githubusercontent.com/jizzel/proxima/main/install.ps1 | iex
+```
+
+You can check your current version with:
+
+```bash
+proxima --version
+```
+
+---
+
 ### Build from source
 
 Requires Dart SDK `^3.11.1`:

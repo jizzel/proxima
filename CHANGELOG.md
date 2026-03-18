@@ -33,6 +33,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - 71 unit tests covering all layers
 - enhance install script with unified fetch function for curl and wget
 - format code for improved readability and consistency
+- add Windows installation script and update CI configuration for cross-platform support
 
 [Unreleased]: https://github.com/jizzel/proxima/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/jizzel/proxima/releases/tag/v0.1.0

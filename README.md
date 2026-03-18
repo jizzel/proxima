@@ -324,16 +324,16 @@ Proxima is structured as nine explicit layers with strict downward-only dependen
 
 ## Roadmap
 
-The following items are planned for future releases but are **not** in v0.1.0:
+The following items are planned for future releases as minor additions in v1:
 
-### V2 — Expanded tools and providers
+### V1.2.0 — Expanded tools and providers
 - **Additional cloud providers** — OpenAI, Gemini, Groq, Mistral (same `LLMProvider` interface, new adapters)
 - **Local providers** — LM Studio and llama.cpp in addition to Ollama
 - **`delete_file` tool** — high-risk level, requires typed CONFIRM
 - **`git` tools** — `git_status`, `git_diff`, `git_log`, `git_commit` (read-only by default; write operations are confirm-level)
 - **Subagent support** — agent spawns child agents for parallel sub-tasks
 
-### V3 — Intelligence and search
+### V1.3.0 — Intelligence and search
 - **AST-aware search** — query code structure (functions, classes, imports) without regex
 - **Semantic search** — embedding-based file retrieval for large codebases
 - **Plugin tools** — load third-party tools from a `~/.proxima/plugins/` directory

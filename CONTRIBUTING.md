@@ -28,7 +28,7 @@ dart analyze                                         # zero issues
 dart test                                            # all tests green
 ```
 
-CI runs these automatically on every push and PR. Failing CI blocks merge.
+CI runs these automatically on every push and PR against ubuntu, macOS, and Windows. Failing CI blocks merge.
 
 ---
 

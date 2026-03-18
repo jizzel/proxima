@@ -28,13 +28,21 @@ A terminal-native, model-agnostic coding agent built in Dart. Proxima understand
 
 ## Installation
 
-### Install script (macOS and Linux)
+### macOS and Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jizzel/proxima/main/install.sh | sh
 ```
 
-Detects your platform automatically and installs the binary to `/usr/local/bin/proxima`. Use `PROXIMA_INSTALL_DIR` to override the destination.
+Detects platform and architecture automatically. Installs to `/usr/local/bin/proxima`. Override with `PROXIMA_INSTALL_DIR`.
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/jizzel/proxima/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\proxima\proxima.exe` and adds it to your user `PATH`. Override with `$env:PROXIMA_INSTALL_DIR`.
 
 ### Manual download
 
@@ -45,9 +53,10 @@ Download the pre-built binary for your platform from [Releases](https://github.c
 | macOS Apple Silicon | `proxima-macos-arm64` |
 | macOS Intel | `proxima-macos-x64` |
 | Linux x86_64 | `proxima-linux-x64` |
+| Windows x86_64 | `proxima-windows-x64.exe` |
 
 ```bash
-# Example — macOS Apple Silicon
+# macOS Apple Silicon
 curl -fsSL https://github.com/jizzel/proxima/releases/latest/download/proxima-macos-arm64 \
   -o /usr/local/bin/proxima && chmod +x /usr/local/bin/proxima
 ```

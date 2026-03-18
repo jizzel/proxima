@@ -141,6 +141,25 @@ One line summary, imperative mood, no period at the end.
 
 ---
 
+## Releasing a new version
+
+Before tagging a release, update the version in **both** places:
+
+1. `pubspec.yaml` — `version: x.y.z`
+2. `lib/cli/arg_parser.dart` — `const String proximaVersion = 'x.y.z';`
+
+Then update `CHANGELOG.md` (move `[Unreleased]` entries into a new versioned section and update the comparison links), commit, and push the tag:
+
+```bash
+git commit -m "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
+```
+
+The release workflow triggers automatically on the tag and builds all platform binaries.
+
+---
+
 ## Branching and PRs
 
 - Branch from `main`. Name your branch `<type>/<short-description>`, e.g. `feat/git-tools` or `fix/history-navigation`.

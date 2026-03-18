@@ -1,6 +1,6 @@
 import 'package:args/args.dart';
 
-const String proximaVersion = '0.1.0';
+const String proximaVersion = '0.1.3';
 
 ArgParser buildArgParser() {
   return ArgParser()

@@ -88,10 +88,11 @@ jobs:
 
       - name: Stage release assets
         run: |
-          mv artifacts/proxima-macos-arm64/proxima      artifacts/proxima-macos-arm64
-          mv artifacts/proxima-linux-x64/proxima        artifacts/proxima-linux-x64
-          mv artifacts/proxima-windows-x64.exe/proxima.exe artifacts/proxima-windows-x64.exe
-          chmod +x artifacts/proxima-macos-arm64 artifacts/proxima-linux-x64
+          mkdir dist
+          mv artifacts/proxima-macos-arm64/proxima      dist/proxima-macos-arm64
+          mv artifacts/proxima-linux-x64/proxima        dist/proxima-linux-x64
+          mv artifacts/proxima-windows-x64.exe/proxima.exe dist/proxima-windows-x64.exe
+          chmod +x dist/proxima-macos-arm64 dist/proxima-linux-x64
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -129,8 +130,8 @@ jobs:
             ```
             Or download `proxima-windows-x64.exe` below and add it to a directory on your `PATH`.
           files: |
-            artifacts/proxima-macos-arm64
-            artifacts/proxima-linux-x64
-            artifacts/proxima-windows-x64.exe
+            dist/proxima-macos-arm64
+            dist/proxima-linux-x64
+            dist/proxima-windows-x64.exe
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

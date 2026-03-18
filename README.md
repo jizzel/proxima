@@ -79,15 +79,15 @@ dart compile exe bin/proxima.dart -o proxima
 ### Interactive REPL
 
 ```bash
-dart run bin/proxima.dart
+proxima
 ```
 
 ### One-shot task
 
 ```bash
-dart run bin/proxima.dart --task "list all TODO comments in this project"
+proxima --task "list all TODO comments in this project"
 # or using positional arg:
-dart run bin/proxima.dart "refactor the auth module to use JWT"
+proxima "refactor the auth module to use JWT"
 ```
 
 ### All flags
@@ -114,7 +114,7 @@ Requires `ANTHROPIC_API_KEY`:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-dart run bin/proxima.dart --model anthropic/claude-sonnet-4-6
+proxima --model anthropic/claude-sonnet-4-6
 ```
 
 | Model | ID |
@@ -129,7 +129,7 @@ Requires Ollama running locally. No API key needed.
 
 ```bash
 ollama pull qwen2.5-coder:32b
-dart run bin/proxima.dart --model ollama/qwen2.5-coder:32b
+proxima --model ollama/qwen2.5-coder:32b
 ```
 
 Switch models from inside the REPL:

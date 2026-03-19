@@ -116,7 +116,7 @@ class SlashCommandHandler {
 Slash commands:
   /help              Show this help
   /exit              Exit Proxima
-  /clear             Clear conversation history
+  /clear             Clear terminal display (history preserved)
   /model [name]      Show or switch model
   /undo              Undo last file change
   /allow <tool>      Allow a tool for this session without prompting

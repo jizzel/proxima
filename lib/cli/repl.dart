@@ -27,7 +27,7 @@ import 'slash_commands.dart';
 
 /// Main REPL loop integrating all layers.
 class ProximaRepl {
-  final ProximaConfig _config;
+  ProximaConfig _config;
   late final Renderer _renderer;
   late final ToolRegistry _toolRegistry;
   late final PermissionGate _permissionGate;
@@ -40,6 +40,9 @@ class ProximaRepl {
 
   /// The model currently in use (may differ from _config after /model switch).
   late String _activeModel;
+
+  /// Cached context window size — set when agent loop is first created.
+  int _contextWindow = 128000;
 
   bool _running = true;
   late final ReadLine _readline;
@@ -79,6 +82,13 @@ class ProximaRepl {
       _session = ProximaSession.create(_config);
     }
 
+    // Sync permission gate mode to the resumed session's mode.
+    // A session may have had its mode changed at runtime via /mode; the saved
+    // mode takes precedence over the config default.
+    if (_session.mode != _config.mode) {
+      _permissionGate.mode = _session.mode;
+    }
+
     // Pre-fetch Ollama model list in background (non-fatal).
     _fetchOllamaModels();
   }
@@ -106,9 +116,10 @@ class ProximaRepl {
     );
 
     final provider = providerRegistry.create(_activeModel);
+    _contextWindow = provider.capabilities.contextWindow;
     final contextBuilder = ContextBuilder(
       _toolRegistry,
-      contextWindow: provider.capabilities.contextWindow,
+      contextWindow: _contextWindow,
     );
 
     _agentLoop = AgentLoop(
@@ -182,6 +193,8 @@ class ProximaRepl {
         (model) => _switchModel(model),
         () => _running = false,
         ollamaModels: _ollamaModels,
+        onModeSwitch: (mode) => _switchMode(mode),
+        contextWindow: _contextWindow,
       );
 
       if (wasCommand) continue;
@@ -231,10 +244,13 @@ class ProximaRepl {
         '/exit',
         '/clear',
         '/model',
+        '/mode',
         '/undo',
         '/allow',
         '/status',
         '/history',
+        '/files',
+        '/context',
       ];
       // Only show suggestions once at least one char after '/' is typed.
       if (buffer.length < 2) return [];
@@ -275,6 +291,12 @@ class ProximaRepl {
     _agentLoop = null; // force re-creation with new provider on next call
     _session = ProximaSession.create(_config.copyWith(model: model));
     _printCurrentHeader();
+  }
+
+  void _switchMode(SessionMode mode) {
+    _config = _config.copyWith(mode: mode);
+    _permissionGate.mode = mode;
+    _renderer.printSuccess('  Mode: ${mode.name}');
   }
 
   String _promptString() {

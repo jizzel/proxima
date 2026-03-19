@@ -69,10 +69,15 @@ class AgentLoop {
       // Build context-aware request.
       final request = await _contextBuilder.build(session, projectIndex);
 
-      // Call the LLM.
+      // Call the LLM (streaming when supported, with complete() fallback).
       LLMResponse response;
+      bool didStream = false;
       try {
-        response = await _provider.complete(request);
+        if (_provider.capabilities.streaming) {
+          (response, didStream) = await _streamResponse(request, callbacks);
+        } else {
+          response = await _provider.complete(request);
+        }
         llmRetries = 0;
       } catch (e) {
         if (llmRetries < _config.maxRetriesLlm) {
@@ -95,7 +100,9 @@ class AgentLoop {
         session.addMessage(
           Message(role: MessageRole.assistant, content: body.text),
         );
-        callbacks.onFinalResponse(body.text);
+        // When streaming, tokens are already on screen — pass empty string so
+        // the renderer only emits the closing separator, not the full text again.
+        callbacks.onFinalResponse(didStream ? '' : body.text);
         session.status = TaskStatus.completed;
         return session;
       }
@@ -104,7 +111,8 @@ class AgentLoop {
         session.addMessage(
           Message(role: MessageRole.assistant, content: body.question),
         );
-        callbacks.onClarify(body.question);
+        // Same: tokens already on screen when streamed.
+        callbacks.onClarify(didStream ? '' : body.question);
         // Wait for next turn with user's answer.
         return session;
       }
@@ -284,5 +292,58 @@ class AgentLoop {
     callbacks.onError('Max iterations (${_config.maxIterations}) reached.');
     session.status = TaskStatus.failed;
     return session;
+  }
+
+  /// Attempt a streaming LLM call, collecting chunks and forwarding text to
+  /// [callbacks.onChunk]. Returns the assembled [LLMResponse] and a flag
+  /// indicating whether streaming actually occurred.
+  ///
+  /// Falls back to [_provider.complete] if the stream throws, logging a debug
+  /// warning via [callbacks.onError].
+  Future<(LLMResponse, bool)> _streamResponse(
+    CompletionRequest request,
+    AgentCallbacks callbacks,
+  ) async {
+    final buffer = StringBuffer();
+    TokenUsage? finalUsage;
+    bool firstChunk = true;
+
+    try {
+      await for (final chunk in _provider.stream(request)) {
+        if (chunk.isDone) {
+          finalUsage = chunk.finalUsage;
+          break;
+        }
+        if (chunk.text.isNotEmpty) {
+          if (firstChunk) {
+            // Spinner must be hidden before the first token appears.
+            callbacks.onChunk('\n');
+            firstChunk = false;
+          }
+          callbacks.onChunk(chunk.text);
+          buffer.write(chunk.text);
+        }
+      }
+
+      final usage = finalUsage ?? TokenUsage.zero;
+      final assembledText = buffer.toString();
+
+      // Build a response from the assembled text. For providers using native
+      // tool use, streaming is only used for final/clarify text responses, so
+      // wrapping in FinalResponse is correct. The existing non-streaming path
+      // handles ToolCallResponse via complete().
+      final response = LLMResponse(
+        body: FinalResponse(assembledText),
+        usage: usage,
+        rawText: assembledText,
+      );
+
+      return (response, true);
+    } catch (e) {
+      // Streaming failed — fall back to complete() and log a debug warning.
+      callbacks.onError('[debug] Streaming failed, falling back: $e');
+      final response = await _provider.complete(request);
+      return (response, false);
+    }
   }
 }

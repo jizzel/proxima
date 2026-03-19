@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'package:dart_console/dart_console.dart';
+import '../context/token_budget.dart';
 import '../core/session.dart';
+import '../core/types.dart';
 import '../providers/ollama_provider.dart';
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
@@ -19,6 +22,8 @@ class SlashCommandHandler {
     void Function(String model) onModelChange,
     void Function() onExit, {
     List<String> ollamaModels = const [],
+    void Function(SessionMode mode)? onModeSwitch,
+    int contextWindow = 128000,
   }) async {
     final trimmed = input.trim();
     if (!trimmed.startsWith('/')) return false;
@@ -37,10 +42,12 @@ class SlashCommandHandler {
         onClear();
       case '/model':
         if (rest.isEmpty) {
-          await _printModels(session.model, ollamaModels);
+          await _printModels(session.model, ollamaModels, onModelChange);
         } else {
           onModelChange(rest);
         }
+      case '/mode':
+        _handleMode(rest, session, onModeSwitch);
       case '/undo':
         _handleUndo(session);
       case '/allow':
@@ -54,6 +61,10 @@ class SlashCommandHandler {
         _printStatus(session);
       case '/history':
         _printHistory(session, rest);
+      case '/files':
+        _printFiles(session);
+      case '/context':
+        _printContext(contextWindow);
       default:
         _renderer.printDim(
           'Unknown command: $command. Type /help for commands.',
@@ -66,42 +77,142 @@ class SlashCommandHandler {
   Future<void> _printModels(
     String currentModel,
     List<String> cachedOllamaModels,
+    void Function(String model) onModelSwitch,
   ) async {
-    _renderer.print('Current model: $currentModel');
-    _renderer.print('');
-    _renderer.print('Anthropic models:');
-    for (final m in anthropicModels) {
-      final full = 'anthropic/$m';
-      final marker = full == currentModel ? ' ◀' : '';
-      _renderer.printDim('  $full$marker');
-    }
-
     // Use cached list first; fall back to live fetch if cache is empty.
-    var models = cachedOllamaModels;
+    var ollamaModels = cachedOllamaModels;
     final ollamaBaseUrl =
         Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
-    if (models.isEmpty) {
-      models = await OllamaProvider(
+    if (ollamaModels.isEmpty) {
+      ollamaModels = await OllamaProvider(
         model: '',
         baseUrl: ollamaBaseUrl,
       ).listModels();
     }
 
-    if (models.isNotEmpty) {
-      _renderer.print('');
-      _renderer.print('Ollama models (running at $ollamaBaseUrl):');
-      for (final m in models) {
-        final full = 'ollama/$m';
-        final marker = full == currentModel ? ' ◀' : '';
-        _renderer.printDim('  $full$marker');
-      }
-    } else {
-      _renderer.printDim('');
-      _renderer.printDim('  (Ollama not reachable at $ollamaBaseUrl)');
+    // Build the full ordered model list.
+    final allModels = [
+      for (final m in anthropicModels) 'anthropic/$m',
+      for (final m in ollamaModels) 'ollama/$m',
+    ];
+
+    if (allModels.isEmpty) {
+      _renderer.printDim('  (No models available)');
+      return;
     }
 
-    _renderer.print('');
-    _renderer.printDim('Usage: /model <provider>/<name>');
+    // Attempt interactive picker; falls back to plain list if not a TTY.
+    final picked = _runModelPicker(allModels, currentModel);
+    if (picked == null) {
+      // User cancelled (Escape) or picker fell back to list-only display.
+      return;
+    }
+    if (picked != currentModel) {
+      onModelSwitch(picked);
+    }
+  }
+
+  /// Shows an interactive arrow-key picker for model selection.
+  ///
+  /// Returns the selected model string, or null if cancelled (Escape) or if
+  /// the terminal is not interactive (in which case the plain list is printed
+  /// to stdout as a fallback).
+  ///
+  /// NOTE: This method is interactive terminal I/O and is therefore tested
+  /// manually. The unit tests for `/model` cover only the explicit-argument
+  /// path (`/model anthropic/claude-sonnet-4-6`).
+  String? _runModelPicker(List<String> models, String currentModel) {
+    if (models.isEmpty) return null;
+
+    // Non-interactive fallback: print a plain list when stdout is not a TTY
+    // (e.g. during unit tests or when output is piped).
+    if (!stdout.hasTerminal) {
+      _renderer.print('Current model: $currentModel');
+      _renderer.print('');
+      for (final m in models) {
+        final marker = m == currentModel ? ' ◀' : '';
+        _renderer.printDim('  $m$marker');
+      }
+      _renderer.print('');
+      _renderer.printDim('Usage: /model <provider>/<name>');
+      return null;
+    }
+
+    final console = Console.scrolling();
+    int selected = models.indexOf(currentModel);
+    if (selected < 0) selected = 0;
+
+    // Print header + list for the first render.
+    stdout.writeln(
+      dim('  Select model  ↑/↓ navigate · Enter confirm · Esc cancel'),
+    );
+    _renderModelList(console, models, selected, currentModel);
+
+    while (true) {
+      final key = console.readKey();
+
+      if (key.isControl) {
+        switch (key.controlChar) {
+          case ControlCharacter.arrowUp:
+            if (selected > 0) {
+              selected--;
+              _renderModelList(console, models, selected, currentModel);
+            }
+          case ControlCharacter.arrowDown:
+            if (selected < models.length - 1) {
+              selected++;
+              _renderModelList(console, models, selected, currentModel);
+            }
+          case ControlCharacter.enter:
+            // Clear the picker (list + header line) before returning.
+            _clearModelList(console, models.length + 1);
+            return models[selected];
+          case ControlCharacter.escape:
+          case ControlCharacter.ctrlC:
+            _clearModelList(console, models.length + 1);
+            return null;
+          default:
+            break;
+        }
+      }
+    }
+  }
+
+  /// Redraws the model list in-place using cursor-up sequences.
+  void _renderModelList(
+    Console console,
+    List<String> models,
+    int selected,
+    String current,
+  ) {
+    // On every call after the first, move the cursor back up to overwrite.
+    // We use raw ANSI since dart_console's cursorUp moves one line at a time.
+    if (models.isNotEmpty) {
+      stdout.write('\x1b[${models.length}A'); // move up N lines
+    }
+
+    for (int i = 0; i < models.length; i++) {
+      final isCurrent = models[i] == current;
+      final isSelected = i == selected;
+      final activeTag = isCurrent ? dim('  (active)') : '';
+
+      String line;
+      if (isSelected) {
+        // Reverse-video highlight for the focused row.
+        line = '\x1b[7m  ▶ ${models[i]}${isCurrent ? '  (active)' : ''}\x1b[0m';
+      } else {
+        line = '    ${dim(models[i])}$activeTag';
+      }
+      stdout.write('\r\x1b[K$line\n');
+    }
+  }
+
+  /// Moves the cursor up [lineCount] lines and erases each line.
+  void _clearModelList(Console console, int lineCount) {
+    for (int i = 0; i < lineCount; i++) {
+      console.cursorUp();
+      console.eraseLine();
+    }
   }
 
   /// Known Anthropic model IDs for listing and tab completion.
@@ -118,11 +229,37 @@ Slash commands:
   /exit              Exit Proxima
   /clear             Clear terminal display (history preserved)
   /model [name]      Show or switch model
+  /mode [safe|confirm|auto]  Show or change permission mode
   /undo              Undo last file change
   /allow <tool>      Allow a tool for this session without prompting
   /status            Show session status
   /history [--last N] Show conversation history (optionally last N messages)
+  /files             Show files read/written this session
+  /context           Show token budget breakdown
 ''');
+  }
+
+  void _handleMode(
+    String arg,
+    ProximaSession session,
+    void Function(SessionMode mode)? onModeSwitch,
+  ) {
+    if (arg.isEmpty) {
+      _renderer.printDim('  mode: ${session.mode.name}');
+      return;
+    }
+    final mode = switch (arg) {
+      'safe' => SessionMode.safe,
+      'confirm' => SessionMode.confirm,
+      'auto' => SessionMode.auto,
+      _ => null,
+    };
+    if (mode == null) {
+      _renderer.printError('  Unknown mode: $arg. Use safe, confirm, or auto.');
+      return;
+    }
+    session.mode = mode;
+    onModeSwitch?.call(mode);
   }
 
   void _handleUndo(ProximaSession session) {
@@ -207,5 +344,65 @@ Slash commands:
     // If no space found, fall back to hard cut.
     if (end == 0) end = maxLen;
     return '${text.substring(0, end).trimRight()}...';
+  }
+
+  void _printFiles(ProximaSession session) {
+    // Collect unique file paths from write_file and patch_file task records.
+    final seen = <String>{};
+    final paths = <String>[];
+    for (final record in session.taskHistory) {
+      if (record.toolName == 'write_file' || record.toolName == 'patch_file') {
+        final path = record.args['path'] as String?;
+        if (path != null && seen.add(path)) {
+          paths.add(path);
+        }
+      }
+    }
+
+    _renderer.print('');
+    if (paths.isEmpty) {
+      _renderer.printDim('  No files accessed this session.');
+    } else {
+      _renderer.print('  Files this session:');
+      for (final p in paths) {
+        _renderer.print('    ${dim("✎")}  $p        ${dim("(modified)")}');
+      }
+    }
+    _renderer.print('');
+  }
+
+  void _printContext(int contextWindow) {
+    final budget = TokenBudget.calculate(contextWindow);
+    final kb = contextWindow ~/ 1000;
+
+    _renderer.print('');
+    _renderer.print('  Token budget  (${kb}k context)');
+
+    void row(String label, int pct, int tokens) {
+      final paddedLabel = label.padRight(16);
+      final paddedPct = '$pct%'.padLeft(4);
+      final formatted = _formatTokenCount(tokens);
+      _renderer.print('    ${dim(paddedLabel)} $paddedPct   ~$formatted');
+    }
+
+    row('system prompt', 3, budget.systemPrompt);
+    row('project index', 2, budget.projectIndex);
+    row('active files', 18, budget.activeFiles);
+    row('history', 35, budget.conversationHistory);
+    row('tool results', 18, budget.toolResults);
+    row('output headroom', 10, budget.outputHeadroom);
+    row('safety margin', 14, budget.safetyMargin);
+    _renderer.print('');
+  }
+
+  /// Formats a token count with comma thousands separators.
+  String _formatTokenCount(int n) {
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 }

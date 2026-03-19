@@ -48,6 +48,7 @@ void main() {
   late bool clearCalled;
   late String? modelSwitchArg;
   late bool exitCalled;
+  late SessionMode? modeSwitchArg;
 
   setUp(() {
     renderer = FakeRenderer();
@@ -56,19 +57,25 @@ void main() {
     clearCalled = false;
     modelSwitchArg = null;
     exitCalled = false;
+    modeSwitchArg = null;
   });
 
   // ── helper ─────────────────────────────────────────────────────────────────
 
-  Future<bool> handle(String input, {List<String> ollamaModels = const []}) =>
-      handler.handle(
-        input,
-        session,
-        () => clearCalled = true,
-        (m) => modelSwitchArg = m,
-        () => exitCalled = true,
-        ollamaModels: ollamaModels,
-      );
+  Future<bool> handle(
+    String input, {
+    List<String> ollamaModels = const [],
+    int contextWindow = 128000,
+  }) => handler.handle(
+    input,
+    session,
+    () => clearCalled = true,
+    (m) => modelSwitchArg = m,
+    () => exitCalled = true,
+    ollamaModels: ollamaModels,
+    onModeSwitch: (m) => modeSwitchArg = m,
+    contextWindow: contextWindow,
+  );
 
   // ── /help ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +87,7 @@ void main() {
     expect(out, contains('/exit'));
     expect(out, contains('/clear'));
     expect(out, contains('/model'));
+    expect(out, contains('/mode'));
     expect(out, contains('/undo'));
     expect(out, contains('/allow'));
     expect(out, contains('/status'));
@@ -181,16 +189,19 @@ void main() {
   // ── /model ─────────────────────────────────────────────────────────────────
 
   test(
-    '9. /model (no arg) prints model list including anthropic models',
+    '9. /model (no arg) falls back to plain list in non-TTY and returns true',
     () async {
+      // The interactive picker requires a real TTY (stdout.hasTerminal == true).
+      // In the test runner stdout is not a TTY, so the plain-list fallback is
+      // used instead.  The picker itself is tested manually.
       final result = await handle(
         '/model',
-        ollamaModels: [], // no ollama models — avoids live fetch
+        ollamaModels: [], // no ollama models — avoids live network fetch
       );
       expect(result, isTrue);
       final out = renderer.output;
+      // The non-TTY fallback still prints the anthropic model names.
       expect(out, contains('anthropic'));
-      // At least one of the known model IDs should appear.
       expect(
         SlashCommandHandler.anthropicModels.any((m) => out.contains(m)),
         isTrue,
@@ -314,6 +325,45 @@ void main() {
     expect(session.permissions.allowedTools, isEmpty);
   });
 
+  // ── /mode ──────────────────────────────────────────────────────────────────
+
+  test('26. /mode (no arg) prints current mode', () async {
+    final result = await handle('/mode');
+    expect(result, isTrue);
+    expect(renderer.output, contains('confirm'));
+  });
+
+  test('27. /mode safe calls onModeSwitch with SessionMode.safe', () async {
+    final result = await handle('/mode safe');
+    expect(result, isTrue);
+    expect(modeSwitchArg, SessionMode.safe);
+  });
+
+  test(
+    '28. /mode confirm calls onModeSwitch with SessionMode.confirm',
+    () async {
+      final result = await handle('/mode confirm');
+      expect(result, isTrue);
+      expect(modeSwitchArg, SessionMode.confirm);
+    },
+  );
+
+  test('29. /mode auto calls onModeSwitch with SessionMode.auto', () async {
+    final result = await handle('/mode auto');
+    expect(result, isTrue);
+    expect(modeSwitchArg, SessionMode.auto);
+  });
+
+  test('30. /mode foo prints error message', () async {
+    final result = await handle('/mode foo');
+    expect(result, isTrue);
+    expect(
+      renderer.output,
+      contains('Unknown mode: foo. Use safe, confirm, or auto.'),
+    );
+    expect(modeSwitchArg, isNull);
+  });
+
   // ── unknown / non-command inputs ───────────────────────────────────────────
 
   test(
@@ -355,6 +405,72 @@ void main() {
         renderer.output,
         contains('Clear terminal display (history preserved)'),
       );
+    },
+  );
+
+  // ── /files ─────────────────────────────────────────────────────────────────
+
+  test(
+    '31. /files with no modified files prints "No files accessed"',
+    () async {
+      final result = await handle('/files');
+      expect(result, isTrue);
+      expect(renderer.output, contains('No files accessed this session.'));
+    },
+  );
+
+  test('32. /files with modified files in session prints file paths', () async {
+    session.addTaskRecord(
+      TaskRecord(
+        toolName: 'write_file',
+        args: {'path': 'lib/foo.dart'},
+        timestamp: DateTime.now(),
+        success: true,
+      ),
+    );
+    session.addTaskRecord(
+      TaskRecord(
+        toolName: 'patch_file',
+        args: {'path': 'lib/bar.dart'},
+        timestamp: DateTime.now(),
+        success: true,
+      ),
+    );
+
+    final result = await handle('/files');
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('lib/foo.dart'));
+    expect(out, contains('lib/bar.dart'));
+    expect(out, contains('modified'));
+  });
+
+  // ── /context ───────────────────────────────────────────────────────────────
+
+  test('33. /context prints token budget with percentage labels', () async {
+    final result = await handle('/context', contextWindow: 128000);
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('system prompt'));
+    expect(out, contains('3%'));
+    expect(out, contains('35%'));
+  });
+
+  test(
+    '34. /context output contains "system prompt" and percentage values',
+    () async {
+      final result = await handle('/context', contextWindow: 100000);
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains('system prompt'));
+      expect(out, contains('project index'));
+      expect(out, contains('active files'));
+      expect(out, contains('history'));
+      expect(out, contains('tool results'));
+      expect(out, contains('output headroom'));
+      expect(out, contains('safety margin'));
+      // Token counts should be present (100k * 3% = 3000).
+      expect(out, contains('3,000'));
     },
   );
 }

@@ -16,19 +16,18 @@ class PermissionResult {
 class PermissionGate {
   final RiskClassifier _classifier;
   final AuditLog _auditLog;
-  final SessionMode _mode;
+  SessionMode mode;
   final Set<String> _allowedTools;
   final PromptCallback _prompt;
 
   PermissionGate({
     required RiskClassifier classifier,
     required AuditLog auditLog,
-    required SessionMode mode,
+    required this.mode,
     required Set<String> allowedTools,
     required PromptCallback prompt,
   }) : _classifier = classifier,
        _auditLog = auditLog,
-       _mode = mode,
        _allowedTools = allowedTools,
        _prompt = prompt;
 
@@ -82,7 +81,7 @@ class PermissionGate {
     }
 
     // 4. Auto mode — execute confirm-level tools without prompt.
-    if (_mode == SessionMode.auto && riskLevel == RiskLevel.confirm) {
+    if (mode == SessionMode.auto && riskLevel == RiskLevel.confirm) {
       await _auditLog.record(
         sessionId: sessionId,
         tool: toolCall.tool,

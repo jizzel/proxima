@@ -60,17 +60,15 @@ void main() {
 
   // ── helper ─────────────────────────────────────────────────────────────────
 
-  Future<bool> handle(
-    String input, {
-    List<String> ollamaModels = const [],
-  }) => handler.handle(
-    input,
-    session,
-    () => clearCalled = true,
-    (m) => modelSwitchArg = m,
-    () => exitCalled = true,
-    ollamaModels: ollamaModels,
-  );
+  Future<bool> handle(String input, {List<String> ollamaModels = const []}) =>
+      handler.handle(
+        input,
+        session,
+        () => clearCalled = true,
+        (m) => modelSwitchArg = m,
+        () => exitCalled = true,
+        ollamaModels: ollamaModels,
+      );
 
   // ── /help ──────────────────────────────────────────────────────────────────
 
@@ -110,15 +108,18 @@ void main() {
     expect(clearCalled, isTrue);
   });
 
-  test('5. /clear does NOT clear session.history — history is preserved', () async {
-    session.addMessage(Message(role: MessageRole.user, content: 'hello'));
-    session.addMessage(Message(role: MessageRole.assistant, content: 'hi'));
-    final countBefore = session.history.length;
+  test(
+    '5. /clear does NOT clear session.history — history is preserved',
+    () async {
+      session.addMessage(Message(role: MessageRole.user, content: 'hello'));
+      session.addMessage(Message(role: MessageRole.assistant, content: 'hi'));
+      final countBefore = session.history.length;
 
-    await handle('/clear');
+      await handle('/clear');
 
-    expect(session.history.length, countBefore);
-  });
+      expect(session.history.length, countBefore);
+    },
+  );
 
   test(
     '6. /clear — verifies history count BEFORE and AFTER is the same',
@@ -179,21 +180,23 @@ void main() {
 
   // ── /model ─────────────────────────────────────────────────────────────────
 
-  test('9. /model (no arg) prints model list including anthropic models',
-      () async {
-    final result = await handle(
-      '/model',
-      ollamaModels: [], // no ollama models — avoids live fetch
-    );
-    expect(result, isTrue);
-    final out = renderer.output;
-    expect(out, contains('anthropic'));
-    // At least one of the known model IDs should appear.
-    expect(
-      SlashCommandHandler.anthropicModels.any((m) => out.contains(m)),
-      isTrue,
-    );
-  });
+  test(
+    '9. /model (no arg) prints model list including anthropic models',
+    () async {
+      final result = await handle(
+        '/model',
+        ollamaModels: [], // no ollama models — avoids live fetch
+      );
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains('anthropic'));
+      // At least one of the known model IDs should appear.
+      expect(
+        SlashCommandHandler.anthropicModels.any((m) => out.contains(m)),
+        isTrue,
+      );
+    },
+  );
 
   test(
     '10. /model anthropic/claude-sonnet-4-6 calls onModelSwitch with correct string',
@@ -221,14 +224,17 @@ void main() {
     expect(out, contains(session.model));
   });
 
-  test('13. /status output contains model name and working directory', () async {
-    await handle('/status');
-    final out = renderer.output;
-    expect(out, contains(session.model));
-    // The working directory is shown in the REPL header, not /status, but the
-    // session fields that are printed include model and id.
-    expect(out, contains(session.model));
-  });
+  test(
+    '13. /status output contains model name and working directory',
+    () async {
+      await handle('/status');
+      final out = renderer.output;
+      expect(out, contains(session.model));
+      // The working directory is shown in the REPL header, not /status, but the
+      // session fields that are printed include model and id.
+      expect(out, contains(session.model));
+    },
+  );
 
   test('14. /status prints token counts', () async {
     session.recordUsage(
@@ -310,18 +316,22 @@ void main() {
 
   // ── unknown / non-command inputs ───────────────────────────────────────────
 
-  test('21. Unknown command /foo returns true (consumed) and prints message',
-      () async {
-    final result = await handle('/foo');
-    expect(result, isTrue);
-    expect(renderer.output.toLowerCase(), contains('unknown'));
-  });
+  test(
+    '21. Unknown command /foo returns true (consumed) and prints message',
+    () async {
+      final result = await handle('/foo');
+      expect(result, isTrue);
+      expect(renderer.output.toLowerCase(), contains('unknown'));
+    },
+  );
 
-  test('22. Non-command input "hello" returns false (not a slash command)',
-      () async {
-    final result = await handle('hello');
-    expect(result, isFalse);
-  });
+  test(
+    '22. Non-command input "hello" returns false (not a slash command)',
+    () async {
+      final result = await handle('hello');
+      expect(result, isFalse);
+    },
+  );
 
   test('23. Empty string returns false', () async {
     final result = await handle('');
@@ -337,12 +347,14 @@ void main() {
 
   // ── /help text specifics ───────────────────────────────────────────────────
 
-  test('25. /clear help text says "Clear terminal display (history preserved)"',
-      () async {
-    await handle('/help');
-    expect(
-      renderer.output,
-      contains('Clear terminal display (history preserved)'),
-    );
-  });
+  test(
+    '25. /clear help text says "Clear terminal display (history preserved)"',
+    () async {
+      await handle('/help');
+      expect(
+        renderer.output,
+        contains('Clear terminal display (history preserved)'),
+      );
+    },
+  );
 }

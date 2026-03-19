@@ -18,6 +18,7 @@ abstract class AgentCallbacks {
   void onFinalResponse(String text);
   void onClarify(String question);
   void onError(String message);
+
   /// Called when the agent is stuck (repeated tool calls).
   /// Returns true to continue the agent loop, false to abort.
   Future<bool> onStuck(List<ToolCall> recentCalls);

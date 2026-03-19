@@ -74,6 +74,7 @@ class MockCallbacks implements AgentCallbacks {
     events.add('stuck');
     return false; // abort by default in tests
   }
+
   @override
   void onChunk(String text) {}
 }

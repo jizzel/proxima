@@ -159,11 +159,7 @@ class ProximaRepl {
 
   /// Interactive REPL loop.
   Future<void> runRepl() async {
-    _renderer.printHeader(
-      model: _activeModel,
-      workingDir: _config.workingDir,
-      version: proximaVersion,
-    );
+    _printCurrentHeader();
 
     while (_running) {
       final input = _readline.readLine(
@@ -261,8 +257,7 @@ class ProximaRepl {
     return [];
   }
 
-  void _clearTerminal() {
-    stdout.write('\x1b[2J\x1b[H');
+  void _printCurrentHeader() {
     _renderer.printHeader(
       model: _activeModel,
       workingDir: _config.workingDir,
@@ -270,15 +265,16 @@ class ProximaRepl {
     );
   }
 
+  void _clearTerminal() {
+    stdout.write('\x1b[2J\x1b[H');
+    _printCurrentHeader();
+  }
+
   void _switchModel(String model) {
     _activeModel = model;
     _agentLoop = null; // force re-creation with new provider on next call
     _session = ProximaSession.create(_config.copyWith(model: model));
-    _renderer.printHeader(
-      model: _activeModel,
-      workingDir: _config.workingDir,
-      version: proximaVersion,
-    );
+    _printCurrentHeader();
   }
 
   String _promptString() {

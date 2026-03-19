@@ -190,7 +190,7 @@ Slash commands:
 
     for (final msg in messages) {
       final role = msg.role.name.toUpperCase();
-      final preview = _truncateAtWord(msg.content, 80);
+      final preview = _truncateAtWord(msg.content.split('\n').first, 80);
       _renderer.print('[$role] $preview');
     }
   }

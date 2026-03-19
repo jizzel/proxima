@@ -11,10 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- `/clear` no longer resets the session or clears conversation history; it now only clears the terminal display and reprints the header
-- `/clear` handler in `slash_commands.dart` no longer calls `session.history.clear()`
+- `/clear` no longer resets the session; it only clears the terminal display and reprints the header
 - `/history` help text corrected from "last N exchanges" to "last N messages"
-- Renderer `onToolCall`/`onToolResult` callbacks already wired to display live tool feedback during agent runs (confirmed, no change needed)
+- `/history` preview now taken from first line only, preventing multiline messages from breaking the display
+- Extracted `_printCurrentHeader()` helper in `repl.dart` to eliminate duplicated header print calls
 
 ---
 

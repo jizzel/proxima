@@ -99,9 +99,9 @@ class Renderer implements AgentCallbacks {
   }
 
   @override
-  void onStuck(List<ToolCall> recentCalls) {
+  Future<bool> onStuck(List<ToolCall> recentCalls) async {
     hideSpinner();
-    TaskSummaryRenderer.renderStuck(recentCalls);
+    return TaskSummaryRenderer.renderStuck(recentCalls);
   }
 
   @override
@@ -205,8 +205,8 @@ class Renderer implements AgentCallbacks {
     // Italic *…* or _…_
     text = text.replaceAllMapped(
       RegExp(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)'),
-      (m) => m.group(1)!,
-    ); // just strip for now — italic is hard on all terminals
+      (m) => '\x1b[3m${m.group(1)!}\x1b[0m',
+    );
     // Inline code `…`
     text = text.replaceAllMapped(
       RegExp(r'`([^`]+)`'),

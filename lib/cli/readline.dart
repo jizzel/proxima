@@ -365,7 +365,8 @@ class ReadLine {
     final matchLen = _prefixLen(suggestion, typed);
     final matched = suggestion.substring(0, matchLen);
     final rest = suggestion.substring(matchLen);
-    return ' \x1b[2m$matched\x1b[0m$rest';
+    // Typed prefix is bright/normal; untyped completion suffix is dim.
+    return ' $matched\x1b[2m$rest\x1b[0m';
   }
 
   int _prefixLen(String a, String b) {

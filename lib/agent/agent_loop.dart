@@ -18,7 +18,9 @@ abstract class AgentCallbacks {
   void onFinalResponse(String text);
   void onClarify(String question);
   void onError(String message);
-  void onStuck(List<ToolCall> recentCalls);
+  /// Called when the agent is stuck (repeated tool calls).
+  /// Returns true to continue the agent loop, false to abort.
+  Future<bool> onStuck(List<ToolCall> recentCalls);
   void onChunk(String text);
 }
 
@@ -138,9 +140,15 @@ class AgentLoop {
 
         // Stuck detection.
         if (StuckDetector.isStuck(toolLog)) {
-          callbacks.onStuck(toolLog.sublist(toolLog.length - 3));
-          session.status = TaskStatus.failed;
-          return session;
+          final shouldContinue = await callbacks.onStuck(
+            toolLog.sublist(toolLog.length - 3),
+          );
+          if (!shouldContinue) {
+            session.status = TaskStatus.failed;
+            return session;
+          }
+          // User chose to continue — reset the tool log to allow progress.
+          toolLog.clear();
         }
 
         // Permission gate.

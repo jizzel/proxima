@@ -39,7 +39,7 @@ class PermissionPrompt {
 
   static Future<bool> _confirmPrompt() async {
     while (true) {
-      stdout.write(bold('Allow? [y/n/s(kip)/a(uto)] '));
+      stdout.write(bold('Allow? [y/n/s(kip)/o(nce)] '));
       final input = stdin.readLineSync()?.trim().toLowerCase() ?? 'n';
       switch (input) {
         case 'y':
@@ -51,11 +51,11 @@ class PermissionPrompt {
         case 's':
         case 'skip':
           return false; // skip = deny for now
-        case 'a':
-        case 'auto':
+        case 'o':
+        case 'once':
           return true;
         default:
-          stdout.writeln(dim('  Enter y, n, s, or a'));
+          stdout.writeln(dim('  Enter y, n, s, or o'));
       }
     }
   }

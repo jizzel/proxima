@@ -70,7 +70,10 @@ class MockCallbacks implements AgentCallbacks {
   @override
   void onError(String message) => events.add('error: $message');
   @override
-  void onStuck(List<ToolCall> recentCalls) => events.add('stuck');
+  Future<bool> onStuck(List<ToolCall> recentCalls) async {
+    events.add('stuck');
+    return false; // abort by default in tests
+  }
   @override
   void onChunk(String text) {}
 }

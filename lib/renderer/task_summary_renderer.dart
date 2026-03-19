@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dart_console/dart_console.dart';
 import '../core/types.dart';
 import '../core/session.dart';
 import 'ansi_helpers.dart';
@@ -18,15 +19,32 @@ class TaskSummaryRenderer {
     }
   }
 
-  static void renderStuck(List<ToolCall> recentCalls) {
+  /// Shows the stuck dialog and returns true if the user wants to continue,
+  /// false to abort.
+  static bool renderStuck(List<ToolCall> recentCalls) {
     stdout.writeln('');
     stdout.writeln(boldYellow('⚠  Agent appears stuck'));
     stdout.writeln(yellow('   Repeated tool calls detected:'));
     for (final call in recentCalls) {
       stdout.writeln(dim('   → ${call.tool}(${call.args})'));
     }
-    stdout.writeln(yellow('   Stopping to avoid infinite loop.'));
-    stdout.writeln(dim('   Try rephrasing your request or using /clear'));
+    stdout.writeln('');
+    stdout.write(bold('   [a]bort or [c]ontinue? '));
+
+    final console = Console.scrolling();
+    while (true) {
+      final key = console.readKey();
+      if (key.char == 'a' || key.char == 'A') {
+        stdout.writeln('a');
+        stdout.writeln(dim('   Aborted.'));
+        return false;
+      }
+      if (key.char == 'c' || key.char == 'C') {
+        stdout.writeln('c');
+        stdout.writeln(dim('   Resuming...'));
+        return true;
+      }
+    }
   }
 
   static void renderMaxIterations(int max) {

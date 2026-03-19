@@ -2,6 +2,7 @@ import 'dart:io';
 import '../core/session.dart';
 import '../providers/ollama_provider.dart';
 import '../renderer/renderer.dart';
+import '../renderer/ansi_helpers.dart';
 
 /// Handles /commands typed in the REPL.
 class SlashCommandHandler {
@@ -34,14 +35,11 @@ class SlashCommandHandler {
         onExit();
       case '/clear':
         onClear();
-        session.history.clear();
-        _renderer.print('Conversation cleared.');
       case '/model':
         if (rest.isEmpty) {
           await _printModels(session.model, ollamaModels);
         } else {
           onModelChange(rest);
-          _renderer.print('Switched to model: $rest');
         }
       case '/undo':
         _handleUndo(session);
@@ -55,7 +53,7 @@ class SlashCommandHandler {
       case '/status':
         _printStatus(session);
       case '/history':
-        _printHistory(session);
+        _printHistory(session, rest);
       default:
         _renderer.printDim(
           'Unknown command: $command. Type /help for commands.',
@@ -123,7 +121,7 @@ Slash commands:
   /undo              Undo last file change
   /allow <tool>      Allow a tool for this session without prompting
   /status            Show session status
-  /history           Show conversation history
+  /history [--last N] Show conversation history (optionally last N messages)
 ''');
   }
 
@@ -159,23 +157,55 @@ Slash commands:
   }
 
   void _printStatus(ProximaSession session) {
-    _renderer.print('''
-Session: ${session.id}
-Model: ${session.model}
-Mode: ${session.mode.name}
-Iterations: ${session.iterationCount}
-Messages: ${session.history.length}
-Tokens: ↑${session.cumulativeUsage.inputTokens} ↓${session.cumulativeUsage.outputTokens}
-''');
+    void row(String key, String value) {
+      _renderer.print('  ${dim(key.padRight(12))} $value');
+    }
+
+    _renderer.print('');
+    row('Session', session.id);
+    row('Model', session.model);
+    row('Mode', session.mode.name);
+    row('Iterations', session.iterationCount.toString());
+    row('Messages', session.history.length.toString());
+    row(
+      'Tokens',
+      '↑${session.cumulativeUsage.inputTokens} ↓${session.cumulativeUsage.outputTokens}',
+    );
+    _renderer.print('');
   }
 
-  void _printHistory(ProximaSession session) {
-    for (final msg in session.history) {
+  void _printHistory(ProximaSession session, String args) {
+    // Parse optional --last N argument.
+    int? lastN;
+    final lastMatch = RegExp(r'--last\s+(\d+)').firstMatch(args);
+    if (lastMatch != null) {
+      lastN = int.tryParse(lastMatch.group(1)!);
+    }
+
+    var messages = session.history;
+    if (lastN != null && lastN > 0) {
+      final skip = messages.length > lastN ? messages.length - lastN : 0;
+      messages = messages.skip(skip).toList();
+    }
+
+    for (final msg in messages) {
       final role = msg.role.name.toUpperCase();
-      final preview = msg.content.length > 80
-          ? '${msg.content.substring(0, 80)}...'
-          : msg.content;
+      final preview = _truncateAtWord(msg.content, 80);
       _renderer.print('[$role] $preview');
     }
+  }
+
+  /// Truncates [text] to at most [maxLen] chars at a word boundary,
+  /// appending '...' only when truncation occurs.
+  String _truncateAtWord(String text, int maxLen) {
+    if (text.length <= maxLen) return text;
+    // Walk back from maxLen to find a space (word boundary).
+    var end = maxLen;
+    while (end > 0 && text[end - 1] != ' ') {
+      end--;
+    }
+    // If no space found, fall back to hard cut.
+    if (end == 0) end = maxLen;
+    return '${text.substring(0, end).trimRight()}...';
   }
 }

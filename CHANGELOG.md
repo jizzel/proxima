@@ -9,6 +9,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `/clear` no longer resets the session; it only clears the terminal display and reprints the header
+- `/history` help text corrected from "last N exchanges" to "last N messages"
+- `/history` preview now taken from first line only, preventing multiline messages from breaking the display
+- Extracted `_printCurrentHeader()` helper in `repl.dart` to eliminate duplicated header print calls
+
 ---
 
 ## [0.1.4] — 2026-03-18

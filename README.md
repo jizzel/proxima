@@ -167,7 +167,7 @@ Switch models from inside the REPL:
 | `/help` | Show all commands |
 | `/model` | List available models |
 | `/model <provider>/<name>` | Switch to a different model |
-| `/clear` | Clear conversation history |
+| `/clear` | Clear terminal display |
 | `/undo` | Restore the last file changed |
 | `/allow <tool>` | Allow a tool for this session without prompting |
 | `/status` | Show session info (model, tokens, iterations) |

@@ -20,6 +20,8 @@ import '../permissions/permission_gate.dart';
 import '../context/context_builder.dart';
 import '../agent/agent_loop.dart';
 import '../renderer/renderer.dart';
+import '../renderer/ansi_helpers.dart';
+import 'arg_parser.dart';
 import 'readline.dart';
 import 'slash_commands.dart';
 
@@ -157,11 +159,7 @@ class ProximaRepl {
 
   /// Interactive REPL loop.
   Future<void> runRepl() async {
-    _renderer.printHeader(
-      model: _activeModel,
-      workingDir: _config.workingDir,
-      version: '0.1.0',
-    );
+    _printCurrentHeader();
 
     while (_running) {
       final input = _readline.readLine(
@@ -180,7 +178,7 @@ class ProximaRepl {
       final wasCommand = await _slashCommands.handle(
         trimmed,
         _session,
-        () => _resetSession(),
+        () => _clearTerminal(),
         (model) => _switchModel(model),
         () => _running = false,
         ollamaModels: _ollamaModels,
@@ -259,23 +257,33 @@ class ProximaRepl {
     return [];
   }
 
-  void _resetSession() {
-    _session = ProximaSession.create(_config.copyWith(model: _activeModel));
+  void _printCurrentHeader() {
+    _renderer.printHeader(
+      model: _activeModel,
+      workingDir: _config.workingDir,
+      version: proximaVersion,
+    );
+  }
+
+  void _clearTerminal() {
+    stdout.write('\x1b[2J\x1b[H');
+    _printCurrentHeader();
   }
 
   void _switchModel(String model) {
     _activeModel = model;
     _agentLoop = null; // force re-creation with new provider on next call
     _session = ProximaSession.create(_config.copyWith(model: model));
+    _printCurrentHeader();
   }
 
   String _promptString() {
     final modeTag = switch (_config.mode) {
-      SessionMode.auto => '\x1b[33m auto\x1b[0m',
-      SessionMode.safe => '\x1b[32m safe\x1b[0m',
+      SessionMode.auto => yellow(' auto'),
+      SessionMode.safe => green(' safe'),
       SessionMode.confirm => '',
     };
-    // Colored prompt: "  ❯ " in cyan, mode tag dim if set.
-    return '\n\x1b[36m ❯\x1b[0m$modeTag ';
+    // Colored prompt: "  ❯ " in cyan, mode tag if set.
+    return '\n${cyan(' ❯')}$modeTag ';
   }
 }

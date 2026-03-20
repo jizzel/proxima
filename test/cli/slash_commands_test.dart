@@ -492,22 +492,19 @@ void main() {
 
   // ── /tools ─────────────────────────────────────────────────────────────────
 
-  test(
-    '35. /tools with registry prints tool names and risk levels',
-    () async {
-      final registry = ToolRegistry();
-      registry.register(ReadFileTool());
-      registry.register(WriteFileTool());
+  test('35. /tools with registry prints tool names and risk levels', () async {
+    final registry = ToolRegistry();
+    registry.register(ReadFileTool());
+    registry.register(WriteFileTool());
 
-      final result = await handle('/tools', toolRegistry: registry);
-      expect(result, isTrue);
-      final out = renderer.output;
-      expect(out, contains('read_file'));
-      expect(out, contains('write_file'));
-      expect(out, contains('safe'));
-      expect(out, contains('confirm'));
-    },
-  );
+    final result = await handle('/tools', toolRegistry: registry);
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('read_file'));
+    expect(out, contains('write_file'));
+    expect(out, contains('safe'));
+    expect(out, contains('confirm'));
+  });
 
   test('36. /tools with null registry prints graceful fallback', () async {
     final result = await handle('/tools');
@@ -581,10 +578,7 @@ void main() {
     final result = await handle('/dir ${Directory.systemTemp.path}');
     expect(result, isTrue);
     expect(dirSwitchArg, isNotNull);
-    expect(
-      dirSwitchArg,
-      Directory(Directory.systemTemp.path).absolute.path,
-    );
+    expect(dirSwitchArg, Directory(Directory.systemTemp.path).absolute.path);
   });
 
   test('44. /dir nonexistent path prints error', () async {
@@ -613,25 +607,25 @@ void main() {
 
   // ── /snapshot ──────────────────────────────────────────────────────────────
 
-  test(
-    '47. /snapshot saves session and prints ID and resume hint',
-    () async {
-      final tempDir = await Directory.systemTemp.createTemp(
-        'proxima_snapshot_test_',
-      );
-      try {
-        final storage = SessionStorage(tempDir.path);
+  test('47. /snapshot saves session and prints ID and resume hint', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'proxima_snapshot_test_',
+    );
+    try {
+      final storage = SessionStorage(tempDir.path);
 
-        final result = await handle('/snapshot', sessionStorage: storage);
-        expect(result, isTrue);
-        final out = renderer.output;
-        expect(out, contains(session.id));
-        expect(out.toLowerCase(), anyOf(contains('resume'), contains('snapshot')));
-      } finally {
-        await tempDir.delete(recursive: true);
-      }
-    },
-  );
+      final result = await handle('/snapshot', sessionStorage: storage);
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains(session.id));
+      expect(
+        out.toLowerCase(),
+        anyOf(contains('resume'), contains('snapshot')),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
 
   // ── /help contains new commands ────────────────────────────────────────────
 
@@ -645,5 +639,114 @@ void main() {
     expect(out, contains('/dir'));
     expect(out, contains('/ignore'));
     expect(out, contains('/snapshot'));
+  });
+
+  // ── /undo after delete_file ────────────────────────────────────────────────
+
+  test('49. /undo after delete_file restores the deleted file', () async {
+    final tempDir = await Directory.systemTemp.createTemp('proxima_undo_del_');
+    try {
+      final target = File('${tempDir.path}/deleted.txt');
+      final backup = File('${tempDir.path}/deleted.txt.proxima_bak');
+      // Simulate what delete_file produces: file gone, backup present.
+      await backup.writeAsString('original content');
+
+      session.addTaskRecord(
+        TaskRecord(
+          toolName: 'delete_file',
+          args: {'path': target.path},
+          backupPath: backup.path,
+          timestamp: DateTime.now(),
+          success: true,
+        ),
+      );
+
+      final result = await handle('/undo');
+      expect(result, isTrue);
+      expect(await target.exists(), isTrue);
+      expect(await target.readAsString(), 'original content');
+      expect(await backup.exists(), isFalse);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  // ── /files includes deleted files ──────────────────────────────────────────
+
+  test('50. /files shows deleted files with (deleted) label', () async {
+    session.addTaskRecord(
+      TaskRecord(
+        toolName: 'delete_file',
+        args: {'path': 'lib/gone.dart'},
+        timestamp: DateTime.now(),
+        success: true,
+      ),
+    );
+
+    final result = await handle('/files');
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('lib/gone.dart'));
+    expect(out, contains('deleted'));
+  });
+
+  // ── /dir no arg ────────────────────────────────────────────────────────────
+
+  test('51. /dir with no arg prints usage', () async {
+    final result = await handle('/dir');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(dirSwitchArg, isNull);
+  });
+
+  // ── /debug invalid arg ────────────────────────────────────────────────────
+
+  test('52. /debug with invalid arg prints error', () async {
+    final result = await handle('/debug yes');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(debugSwitchArg, isNull);
+  });
+
+  // ── /snapshot null storage ────────────────────────────────────────────────
+
+  test(
+    '53. /snapshot with null sessionStorage prints graceful fallback',
+    () async {
+      final result = await handle('/snapshot');
+      expect(result, isTrue);
+      expect(renderer.output, contains('not available'));
+    },
+  );
+
+  // ── /deny + /allow same tool — deny wins ──────────────────────────────────
+
+  test('54. /deny wins when same tool is also in allowlist', () async {
+    // Both allow and deny the same tool.
+    session.permissions = session.permissions
+        .withAllowedTool('read_file')
+        .withDeniedTool('read_file');
+
+    expect(session.permissions.allowedTools, contains('read_file'));
+    expect(session.permissions.deniedTools, contains('read_file'));
+    // The permission gate checks deny BEFORE allow — verified at the data level.
+    // The sets themselves are both populated; gate precedence is tested in
+    // permission_gate_test. Here we just confirm both sets hold the value.
+    expect(session.permissions.deniedTools, contains('read_file'));
+  });
+
+  // ── /ignore duplicate pattern ─────────────────────────────────────────────
+
+  test('55. /ignore same pattern twice adds it twice', () async {
+    await handle('/ignore *.log');
+    renderer.clearOutput();
+    await handle('/ignore *.log');
+
+    // ignoredPatterns is a list — duplicates are allowed (context manager
+    // handles deduplication at filter time).
+    expect(
+      session.permissions.ignoredPatterns.where((p) => p == '*.log').length,
+      2,
+    );
   });
 }

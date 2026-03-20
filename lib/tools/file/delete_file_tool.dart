@@ -50,7 +50,10 @@ class DeleteFileTool implements ProximaTool {
     final file = File(fullPath);
 
     // Backup before delete — same pattern as write_file/patch_file (enables /undo).
+    // Overwrite any stale backup so the most recent content is always preserved.
     final backupPath = '$fullPath.proxima_bak';
+    final backup = File(backupPath);
+    if (await backup.exists()) await backup.delete();
     await file.copy(backupPath);
     await file.delete();
 

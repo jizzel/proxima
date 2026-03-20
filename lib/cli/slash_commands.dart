@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
+import 'package:path/path.dart' as p;
 import '../context/token_budget.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
@@ -303,7 +304,9 @@ Slash commands:
   void _handleUndo(ProximaSession session) {
     final lastWriteTask = session.taskHistory.reversed.firstWhere(
       (t) =>
-          (t.toolName == 'write_file' || t.toolName == 'patch_file') &&
+          (t.toolName == 'write_file' ||
+              t.toolName == 'patch_file' ||
+              t.toolName == 'delete_file') &&
           t.backupPath != null,
       orElse: () => TaskRecord(
         toolName: '',
@@ -385,25 +388,30 @@ Slash commands:
   }
 
   void _printFiles(ProximaSession session) {
-    // Collect unique file paths from write_file and patch_file task records.
+    // Collect unique file paths from file-mutating task records.
     final seen = <String>{};
-    final paths = <String>[];
+    final entries = <(String, String)>[];
     for (final record in session.taskHistory) {
-      if (record.toolName == 'write_file' || record.toolName == 'patch_file') {
+      final label = switch (record.toolName) {
+        'write_file' || 'patch_file' => '(modified)',
+        'delete_file' => '(deleted)',
+        _ => null,
+      };
+      if (label != null) {
         final path = record.args['path'] as String?;
         if (path != null && seen.add(path)) {
-          paths.add(path);
+          entries.add((path, label));
         }
       }
     }
 
     _renderer.print('');
-    if (paths.isEmpty) {
+    if (entries.isEmpty) {
       _renderer.printDim('  No files accessed this session.');
     } else {
       _renderer.print('  Files this session:');
-      for (final p in paths) {
-        _renderer.print('    ${dim("✎")}  $p        ${dim("(modified)")}');
+      for (final (path, label) in entries) {
+        _renderer.print('    ${dim("✎")}  $path        ${dim(label)}');
       }
     }
     _renderer.print('');
@@ -477,17 +485,17 @@ Slash commands:
   }
 
   void _printPermissions(ProximaSession session) {
-    final p = session.permissions;
+    final perms = session.permissions;
     _renderer.print('');
     _renderer.print('  Permissions:');
     _renderer.print(
-      '    allowed tools:    ${p.allowedTools.isEmpty ? '(none)' : p.allowedTools.join(', ')}',
+      '    allowed tools:    ${perms.allowedTools.isEmpty ? '(none)' : perms.allowedTools.join(', ')}',
     );
     _renderer.print(
-      '    denied tools:     ${p.deniedTools.isEmpty ? '(none)' : p.deniedTools.join(', ')}',
+      '    denied tools:     ${perms.deniedTools.isEmpty ? '(none)' : perms.deniedTools.join(', ')}',
     );
     _renderer.print(
-      '    ignored patterns: ${p.ignoredPatterns.isEmpty ? '(none)' : p.ignoredPatterns.join(', ')}',
+      '    ignored patterns: ${perms.ignoredPatterns.isEmpty ? '(none)' : perms.ignoredPatterns.join(', ')}',
     );
     _renderer.print('');
   }
@@ -497,7 +505,7 @@ Slash commands:
       _renderer.printDim('Usage: /dir <path>');
       return;
     }
-    final resolved = Directory(path).absolute.path;
+    final resolved = p.canonicalize(path);
     if (!Directory(resolved).existsSync()) {
       _renderer.printError('Directory not found: $path');
       return;
@@ -513,7 +521,12 @@ Slash commands:
       _renderer.printDim('  (session storage not available)');
       return;
     }
-    await sessionStorage.save(session);
+    try {
+      await sessionStorage.save(session);
+    } catch (e) {
+      _renderer.printError('Snapshot failed: $e');
+      return;
+    }
     _renderer.printSuccess('Snapshot saved: ${session.id}');
     _renderer.printDim('Resume with: proxima --resume ${session.id}');
   }

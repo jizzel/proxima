@@ -50,7 +50,11 @@ void main() {
     expect(
       () => tool.execute({'path': 'nonexistent.txt'}, tempDir.path),
       throwsA(
-        isA<ToolError>().having((e) => e.message, 'message', contains('not found')),
+        isA<ToolError>().having(
+          (e) => e.message,
+          'message',
+          contains('not found'),
+        ),
       ),
     );
   });
@@ -91,5 +95,27 @@ void main() {
   test('8. dryRun contains [HIGH RISK]', () async {
     final result = await tool.dryRun({'path': 'some.txt'}, tempDir.path);
     expect(result.preview, contains('[HIGH RISK]'));
+  });
+
+  test('9. overwrites stale backup if .proxima_bak already exists', () async {
+    final file = File('${tempDir.path}/target.txt');
+    final staleBackup = File('${tempDir.path}/target.txt.proxima_bak');
+    await file.writeAsString('new content');
+    await staleBackup.writeAsString('stale content');
+
+    // Should not throw; stale backup is overwritten.
+    await tool.execute({'path': 'target.txt'}, tempDir.path);
+
+    expect(await file.exists(), isFalse);
+    expect(await staleBackup.readAsString(), 'new content');
+  });
+
+  test('10. result string contains the original path', () async {
+    final file = File('${tempDir.path}/named.txt');
+    await file.writeAsString('x');
+
+    final result = await tool.execute({'path': 'named.txt'}, tempDir.path);
+
+    expect(result, contains('named.txt'));
   });
 }

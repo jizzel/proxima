@@ -111,15 +111,16 @@ class SlashCommandHandler {
     List<String> cachedOllamaModels,
     void Function(String model) onModelSwitch,
   ) async {
-    // Use cached list first; fall back to live fetch if cache is empty.
+    // Use cached list first; only do a live fetch in interactive (TTY) mode
+    // to avoid blocking non-interactive callers (tests, piped output, etc.).
     var ollamaModels = cachedOllamaModels;
-    final ollamaBaseUrl =
-        Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
-    if (ollamaModels.isEmpty) {
+    if (ollamaModels.isEmpty && stdout.hasTerminal) {
+      final ollamaBaseUrl =
+          Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
       ollamaModels = await OllamaProvider(
         model: '',
         baseUrl: ollamaBaseUrl,
-      ).listModels();
+      ).listModels().catchError((_) => <String>[]);
     }
 
     // Build the full ordered model list.

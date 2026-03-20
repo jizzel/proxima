@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:proxima/cli/slash_commands.dart';
 import 'package:proxima/core/session.dart';
@@ -579,7 +580,10 @@ void main() {
     final result = await handle('/dir ${Directory.systemTemp.path}');
     expect(result, isTrue);
     expect(dirSwitchArg, isNotNull);
-    expect(dirSwitchArg, Directory(Directory.systemTemp.path).absolute.path);
+    expect(
+      dirSwitchArg,
+      p.canonicalize(Directory.systemTemp.path),
+    );
   });
 
   test('44. /dir nonexistent path prints error', () async {

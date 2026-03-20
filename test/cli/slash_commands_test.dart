@@ -580,10 +580,7 @@ void main() {
     final result = await handle('/dir ${Directory.systemTemp.path}');
     expect(result, isTrue);
     expect(dirSwitchArg, isNotNull);
-    expect(
-      dirSwitchArg,
-      p.canonicalize(Directory.systemTemp.path),
-    );
+    expect(dirSwitchArg, p.canonicalize(Directory.systemTemp.path));
   });
 
   test('44. /dir nonexistent path prints error', () async {

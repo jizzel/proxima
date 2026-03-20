@@ -104,17 +104,23 @@ class SubagentRunner {
     try {
       final response = await _provider.complete(request);
       final body = response.body;
+      final isError = body is ErrorResponse || body is ToolCallResponse;
+      final errorMessage = switch (body) {
+        ErrorResponse() => 'Subagent returned an error: ${body.message}',
+        ToolCallResponse() => 'Subagent hallucinated an unsupported tool call.',
+        _ => null,
+      };
       final output = switch (body) {
         FinalResponse() => body.text,
-        ToolCallResponse() => body.toolCall.toString(),
         ClarifyResponse() => body.question,
-        ErrorResponse() => body.message,
+        _ => '',
       };
       return SubagentResult(
         agentType: agentTypeStr,
         output: output,
         usage: response.usage,
-        isError: false,
+        isError: isError,
+        errorMessage: errorMessage,
       );
     } catch (e) {
       return SubagentResult(

@@ -247,6 +247,61 @@ void main() {
       },
     );
 
+    test(
+      'ErrorResponse from LLM — isError true, errorMessage contains provider error',
+      () async {
+        final provider = CapturingMockProvider([
+          LLMResponse(
+            body: ErrorResponse('provider rejected the request'),
+            usage: TokenUsage.zero,
+          ),
+        ]);
+
+        final runner = SubagentRunner(provider: provider);
+        final result = await runner.run(
+          agentTypeStr: 'code_analyzer',
+          task: 'task',
+          context: 'ctx',
+          model: 'mock/model',
+        );
+
+        expect(result.isError, isTrue);
+        expect(result.errorMessage, contains('Subagent returned an error'));
+        expect(result.errorMessage, contains('provider rejected the request'));
+        expect(result.output, isEmpty);
+      },
+    );
+
+    test(
+      'ToolCallResponse from LLM — isError true, errorMessage mentions hallucinated tool call',
+      () async {
+        final provider = CapturingMockProvider([
+          LLMResponse(
+            body: ToolCallResponse(
+              ToolCall(
+                tool: 'read_file',
+                args: {'path': '/tmp/foo'},
+                reasoning: 'trying to read a file',
+              ),
+            ),
+            usage: TokenUsage.zero,
+          ),
+        ]);
+
+        final runner = SubagentRunner(provider: provider);
+        final result = await runner.run(
+          agentTypeStr: 'code_analyzer',
+          task: 'task',
+          context: 'ctx',
+          model: 'mock/model',
+        );
+
+        expect(result.isError, isTrue);
+        expect(result.errorMessage, contains('hallucinated'));
+        expect(result.output, isEmpty);
+      },
+    );
+
     test('dryRun — preview contains [DRY RUN] and agent name', () async {
       final tool = DelegateToSubagentTool();
       final dryRun = await tool.dryRun({

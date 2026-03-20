@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.0.0] — 2026-03-20
+
 ### Added
 - `delegate_to_subagent` tool (safe) — delegates to `code_analyzer`, `refactor`, or `test` specialist subagent; max 2 delegations per turn; subagents are tool-free and cannot nest
 - `SubagentRunner` — single-shot LLM call with specialist system prompt; never throws; subagent token usage folded into session cumulative total
@@ -31,7 +35,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `/context` slash command to display token budget breakdown for the active model
 - Streaming LLM responses — tokens now appear live in the terminal as the model generates them (Anthropic and Ollama); falls back to non-streaming for unsupported providers
 - Tab completion extended to `/mode`, `/files`, `/context`
-- 37 new tests covering slash commands, streaming, and fallback paths (108 total)
+- 192 tests total covering slash commands, streaming, ReAct fallback, subagent runner, and agent loop integration
 
 ### Fixed
 
@@ -50,7 +54,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `/clear` no longer resets the session; it only clears the terminal display and reprints the header
 - `/history` help text corrected from "last N exchanges" to "last N messages"
 - `/history` preview now taken from first line only, preventing multiline messages from breaking the display
-- Extracted `_printCurrentHeader()` helper in `repl.dart` to eliminate duplicated header print calls
 
 ---
 
@@ -118,7 +121,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/jizzel/proxima/compare/v0.1.4...v1.0.0
 [0.1.4]: https://github.com/jizzel/proxima/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jizzel/proxima/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jizzel/proxima/compare/v0.1.1...v0.1.2

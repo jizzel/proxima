@@ -67,6 +67,7 @@ class AnthropicProvider implements LLMProvider {
 
     final buffer = StringBuffer();
     TokenUsage? finalUsage;
+    bool hasToolUse = false;
 
     await for (final chunk in response.stream.transform(utf8.decoder)) {
       buffer.write(chunk);
@@ -86,11 +87,20 @@ class AnthropicProvider implements LLMProvider {
           final event = jsonDecode(data) as Map<String, dynamic>;
           final type = event['type'] as String?;
 
-          if (type == 'content_block_delta') {
-            final delta = event['delta'] as Map<String, dynamic>?;
-            final text = delta?['text'] as String? ?? '';
-            if (text.isNotEmpty) {
-              yield LLMChunk(text: text);
+          if (type == 'content_block_start') {
+            // If the model is making a tool call, flag it so we can signal
+            // the caller to fall back to complete() for proper parsing.
+            final block = event['content_block'] as Map<String, dynamic>?;
+            if (block?['type'] == 'tool_use') {
+              hasToolUse = true;
+            }
+          } else if (type == 'content_block_delta') {
+            if (!hasToolUse) {
+              final delta = event['delta'] as Map<String, dynamic>?;
+              final text = delta?['text'] as String? ?? '';
+              if (text.isNotEmpty) {
+                yield LLMChunk(text: text);
+              }
             }
           } else if (type == 'message_delta') {
             final usage = event['usage'] as Map<String, dynamic>?;
@@ -104,7 +114,17 @@ class AnthropicProvider implements LLMProvider {
               );
             }
           } else if (type == 'message_stop') {
-            yield LLMChunk(text: '', isDone: true, finalUsage: finalUsage);
+            if (hasToolUse) {
+              // Signal caller to re-fetch via complete() for tool-use parsing.
+              yield LLMChunk(
+                text: '',
+                isDone: true,
+                finalUsage: finalUsage,
+                hasToolUse: true,
+              );
+            } else {
+              yield LLMChunk(text: '', isDone: true, finalUsage: finalUsage);
+            }
             return;
           }
         } catch (_) {

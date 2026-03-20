@@ -411,9 +411,12 @@ class AgentLoop {
     bool firstChunk = true;
 
     try {
+      bool toolUseDetected = false;
+
       await for (final chunk in _provider.stream(request)) {
         if (chunk.isDone) {
           finalUsage = chunk.finalUsage;
+          toolUseDetected = chunk.hasToolUse;
           break;
         }
         if (chunk.text.isNotEmpty) {
@@ -427,13 +430,17 @@ class AgentLoop {
         }
       }
 
+      // When the model made a tool call, the stream only carried metadata —
+      // fall back to complete() which parses the full tool_use block.
+      if (toolUseDetected) {
+        final response = await _provider.complete(request);
+        return (response, false);
+      }
+
       final usage = finalUsage ?? TokenUsage.zero;
       final assembledText = buffer.toString();
 
-      // Build a response from the assembled text. For providers using native
-      // tool use, streaming is only used for final/clarify text responses, so
-      // wrapping in FinalResponse is correct. The existing non-streaming path
-      // handles ToolCallResponse via complete().
+      // Streaming was used for a final/clarify text response.
       final response = LLMResponse(
         body: FinalResponse(assembledText),
         usage: usage,

@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'package:dart_console/dart_console.dart';
 import '../core/types.dart';
 import 'ansi_helpers.dart';
 import 'diff_renderer.dart';
 
 /// Interactive permission prompts.
 class PermissionPrompt {
-  /// Show confirm prompt (y/n/e/s/a) for confirm-level tools.
+  /// Show confirm prompt (y/n/s/o) for confirm-level tools.
   /// Returns true if approved.
   static Future<bool> confirm(
     ToolCall toolCall,
@@ -34,39 +35,53 @@ class PermissionPrompt {
       return await _highRiskPrompt();
     }
 
-    return await _confirmPrompt();
+    return _confirmPrompt();
   }
 
-  static Future<bool> _confirmPrompt() async {
+  /// Single-keypress confirm: y/o = allow, n/s = deny.
+  /// Works correctly in raw mode (dart_console's Console.readKey()).
+  static bool _confirmPrompt() {
+    final console = Console.scrolling();
     while (true) {
-      stdout.write(bold('Allow? [y/n/s(kip)/o(nce)] '));
-      final input = stdin.readLineSync()?.trim().toLowerCase() ?? 'n';
-      switch (input) {
+      stdout.write(bold('Allow? [y]es / [n]o / [s]kip / [o]nce: '));
+      final key = console.readKey();
+
+      // Echo the pressed key so the user can see what they chose.
+      final char = key.isControl ? '' : key.char;
+      stdout.writeln(char);
+
+      if (key.isControl) {
+        switch (key.controlChar) {
+          case ControlCharacter.ctrlC:
+            return false;
+          default:
+            continue;
+        }
+      }
+
+      switch (key.char.toLowerCase()) {
         case 'y':
-        case 'yes':
+        case 'o':
           return true;
         case 'n':
-        case 'no':
-          return false;
         case 's':
-        case 'skip':
-          return false; // skip = deny for now
-        case 'o':
-        case 'once':
-          return true;
+          return false;
         default:
-          stdout.writeln(dim('  Enter y, n, s, or o'));
+          stdout.writeln(dim('  Press y, n, s, or o'));
       }
     }
   }
 
+  /// High-risk requires typing "CONFIRM" — uses line input since raw-mode
+  /// single-keypress is impractical for a multi-character confirmation word.
+  /// Temporarily restores line-buffered input for this prompt only.
   static Future<bool> _highRiskPrompt() async {
     stdout.writeln('');
     stdout.writeln(boldRed('⚠️  HIGH RISK OPERATION'));
-    stdout.writeln(
-      red('Type "CONFIRM" to proceed, or anything else to cancel:'),
-    );
+    stdout.writeln(red('Type "CONFIRM" to proceed, or anything else to cancel:'));
     stdout.write('> ');
+    // stdin.readLineSync works here because high-risk prompts are rare and
+    // the user is expected to type a full word — single-keypress is not enough.
     final input = stdin.readLineSync()?.trim() ?? '';
     return input == 'CONFIRM';
   }

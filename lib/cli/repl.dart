@@ -49,7 +49,8 @@ class ProximaRepl {
   /// The model currently in use (may differ from _config after /model switch).
   late String _activeModel;
 
-  /// Cached context window size — set when agent loop is first created.
+  /// Cached context window size. Resolved from the active model at
+  /// initialize() time so /context shows the correct value immediately.
   int _contextWindow = 128000;
 
   bool _running = true;
@@ -62,6 +63,7 @@ class ProximaRepl {
 
   Future<void> initialize({String? resumeSessionId}) async {
     _activeModel = _config.model;
+    _contextWindow = _contextWindowForModel(_activeModel);
     _readline = ReadLine.withUserHistory();
     _renderer = Renderer(debug: _config.debug);
     _toolRegistry = _buildToolRegistry();
@@ -124,6 +126,7 @@ class ProximaRepl {
     );
 
     final provider = providerRegistry.create(_activeModel);
+    // Update with the exact value from the provider (may differ from estimate).
     _contextWindow = provider.capabilities.contextWindow;
     final contextBuilder = ContextBuilder(
       _toolRegistry,
@@ -292,6 +295,11 @@ class ProximaRepl {
     // Complete model names after "/model ".
     if (buffer.startsWith('/model ')) {
       final partial = buffer.substring('/model '.length);
+      // Only offer completions when the user has started typing a partial name.
+      // When the buffer is exactly "/model " (no partial), pressing Enter opens
+      // the interactive picker which fetches a complete list — show nothing
+      // in the panel so as not to show an incomplete set.
+      if (partial.isEmpty) return [];
       final allModels = [
         for (final m in SlashCommandHandler.anthropicModels) 'anthropic/$m',
         for (final m in _ollamaModels) 'ollama/$m',
@@ -321,13 +329,25 @@ class ProximaRepl {
   void _switchModel(String model) {
     _activeModel = model;
     _agentLoop = null; // force re-creation with new provider on next call
+    _contextWindow = _contextWindowForModel(model);
+    // Carry forward the current mode so a prior /mode change is not lost.
     _session = ProximaSession.create(_config.copyWith(model: model));
     _printCurrentHeader();
+  }
+
+  /// Returns the known context window for [model] without creating a provider
+  /// (avoids requiring API key just to show /context output).
+  static int _contextWindowForModel(String model) {
+    if (model.startsWith('anthropic/')) return 200000;
+    if (model.startsWith('ollama/')) return 32768;
+    return 128000; // unknown provider — use conservative default
   }
 
   void _switchMode(SessionMode mode) {
     _config = _config.copyWith(mode: mode);
     _permissionGate.mode = mode;
+    // Keep session in sync so the mode is persisted on save/resume.
+    _session.mode = mode;
     _renderer.printSuccess('  Mode: ${mode.name}');
   }
 

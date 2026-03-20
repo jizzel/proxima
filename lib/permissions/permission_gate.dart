@@ -34,10 +34,12 @@ class PermissionGate {
   /// Evaluate whether [toolCall] can execute.
   /// [sessionId] is used for audit logging.
   /// [deniedTools] is the session-level deny list populated via /deny.
+  /// [allowedTools] is the session-level allow list populated via /allow.
   Future<PermissionResult> evaluate(
     ToolCall toolCall,
     String sessionId, {
     Set<String> deniedTools = const {},
+    Set<String> allowedTools = const {},
   }) async {
     // 0. Session deny list — belt-and-suspenders check for /deny.
     if (deniedTools.contains(toolCall.tool)) {
@@ -73,8 +75,10 @@ class PermissionGate {
       );
     }
 
-    // 2. Allow-list — tool was previously allowed this session.
-    if (_allowedTools.contains(toolCall.tool)) {
+    // 2. Allow-list — tool was previously allowed this session (either via
+    // constructor-injected set or the session-level /allow command).
+    if (_allowedTools.contains(toolCall.tool) ||
+        allowedTools.contains(toolCall.tool)) {
       await _auditLog.record(
         sessionId: sessionId,
         tool: toolCall.tool,

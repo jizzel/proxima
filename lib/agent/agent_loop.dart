@@ -250,6 +250,7 @@ class AgentLoop {
           toolCall,
           session.id,
           deniedTools: session.permissions.deniedTools,
+          allowedTools: session.permissions.allowedTools,
         );
 
         if (permission.decision == GateDecision.deny) {

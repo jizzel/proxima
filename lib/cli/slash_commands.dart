@@ -174,11 +174,11 @@ class SlashCommandHandler {
     int selected = models.indexOf(currentModel);
     if (selected < 0) selected = 0;
 
-    // Print header + list for the first render.
+    // Print header + list for the first render (no cursor-up on initial draw).
     stdout.writeln(
       dim('  Select model  ↑/↓ navigate · Enter confirm · Esc cancel'),
     );
-    _renderModelList(console, models, selected, currentModel);
+    _renderModelList(console, models, selected, currentModel, firstRender: true);
 
     while (true) {
       final key = console.readKey();
@@ -211,15 +211,18 @@ class SlashCommandHandler {
   }
 
   /// Redraws the model list in-place using cursor-up sequences.
+  ///
+  /// [firstRender] must be true on the initial draw to skip the cursor-up
+  /// that would otherwise overwrite content above the picker.
   void _renderModelList(
     Console console,
     List<String> models,
     int selected,
-    String current,
-  ) {
+    String current, {
+    bool firstRender = false,
+  }) {
     // On every call after the first, move the cursor back up to overwrite.
-    // We use raw ANSI since dart_console's cursorUp moves one line at a time.
-    if (models.isNotEmpty) {
+    if (!firstRender && models.isNotEmpty) {
       stdout.write('\x1b[${models.length}A'); // move up N lines
     }
 
@@ -343,6 +346,7 @@ Slash commands:
     row('Session', session.id);
     row('Model', session.model);
     row('Mode', session.mode.name);
+    row('Dir', session.workingDir);
     row('Iterations', session.iterationCount.toString());
     row('Messages', session.history.length.toString());
     row(

@@ -9,6 +9,9 @@ import 'package:proxima/renderer/renderer.dart';
 import 'package:proxima/tools/tool_registry.dart';
 import 'package:proxima/tools/file/read_file_tool.dart';
 import 'package:proxima/tools/file/write_file_tool.dart';
+import 'package:proxima/permissions/risk_classifier.dart';
+import 'package:proxima/permissions/audit_log.dart';
+import 'package:proxima/permissions/permission_gate.dart';
 
 /// A fake [Renderer] that captures printed output to a [StringBuffer]
 /// instead of writing to stdout.
@@ -251,17 +254,12 @@ void main() {
     expect(out, contains(session.model));
   });
 
-  test(
-    '13. /status output contains model name and working directory',
-    () async {
-      await handle('/status');
-      final out = renderer.output;
-      expect(out, contains(session.model));
-      // The working directory is shown in the REPL header, not /status, but the
-      // session fields that are printed include model and id.
-      expect(out, contains(session.model));
-    },
-  );
+  test('13. /status output contains model name and working directory', () async {
+    await handle('/status');
+    final out = renderer.output;
+    expect(out, contains(session.model));
+    expect(out, contains(session.workingDir));
+  });
 
   test('14. /status prints token counts', () async {
     session.recordUsage(
@@ -748,5 +746,67 @@ void main() {
       session.permissions.ignoredPatterns.where((p) => p == '*.log').length,
       2,
     );
+  });
+
+  // ── /mode persists to session ──────────────────────────────────────────────
+
+  test('56. /mode updates session.mode so it is persisted on save/resume',
+      () async {
+    expect(session.mode, SessionMode.confirm); // default
+
+    // The handler updates session.mode directly.
+    await handle('/mode auto');
+
+    expect(session.mode, SessionMode.auto);
+  });
+
+  test('57. /mode safe updates session.mode to safe', () async {
+    await handle('/mode safe');
+    expect(session.mode, SessionMode.safe);
+  });
+
+  // ── /allow is honoured by PermissionGate ──────────────────────────────────
+
+  test('58. /allow tool is respected by PermissionGate.evaluate()', () async {
+    final tempDir = await Directory.systemTemp.createTemp('proxima_allow_');
+    try {
+      final registry = ToolRegistry();
+      registry.register(WriteFileTool());
+      final auditLog = AuditLog(tempDir.path);
+      final gate = PermissionGate(
+        classifier: RiskClassifier(registry),
+        auditLog: auditLog,
+        mode: SessionMode.confirm, // confirm mode — would normally prompt
+        allowedTools: {},
+        prompt: (_, _) async => false, // prompt always denies
+      );
+
+      // Allow write_file via /allow.
+      await handle('/allow write_file');
+      expect(session.permissions.allowedTools, contains('write_file'));
+
+      // The gate must honour the session allowlist even though the prompt denies.
+      final result = await gate.evaluate(
+        ToolCall(
+          tool: 'write_file',
+          args: {'path': 'foo.txt', 'content': 'x'},
+          reasoning: 'test',
+        ),
+        session.id,
+        allowedTools: session.permissions.allowedTools,
+      );
+      expect(result.decision, GateDecision.allow);
+
+      await auditLog.close();
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  // ── /status shows working directory ───────────────────────────────────────
+
+  test('59. /status shows working directory', () async {
+    await handle('/status');
+    expect(renderer.output, contains(session.workingDir));
   });
 }

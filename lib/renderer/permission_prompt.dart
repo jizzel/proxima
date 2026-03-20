@@ -78,7 +78,9 @@ class PermissionPrompt {
   static Future<bool> _highRiskPrompt() async {
     stdout.writeln('');
     stdout.writeln(boldRed('⚠️  HIGH RISK OPERATION'));
-    stdout.writeln(red('Type "CONFIRM" to proceed, or anything else to cancel:'));
+    stdout.writeln(
+      red('Type "CONFIRM" to proceed, or anything else to cancel:'),
+    );
     stdout.write('> ');
     // stdin.readLineSync works here because high-risk prompts are rare and
     // the user is expected to type a full word — single-keypress is not enough.

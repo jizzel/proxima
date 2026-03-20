@@ -20,6 +20,7 @@ class LLMChunk {
   final String text;
   final bool isDone;
   final TokenUsage? finalUsage;
+
   /// True when the done chunk signals the model made a tool call.
   /// The caller should re-fetch via complete() to get the parsed tool call.
   final bool hasToolUse;

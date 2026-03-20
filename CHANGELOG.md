@@ -35,6 +35,17 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Tool calls silently dropped for Ollama/ReAct models** — `ReActFallback.stream()` was a passthrough that forwarded raw `<tool_call>` JSON as plain text; `_streamResponse` assembled it into a `FinalResponse` and the agent loop treated the turn as complete without ever executing the tool or showing a permission prompt. Fixed by buffering the full streamed response, detecting tool-call blocks at the end, and signalling `hasToolUse: true` so `_streamResponse` falls back to `complete()` for correct extraction.
+- **Tool calls silently dropped for Anthropic streaming** — `stream()` ignored `content_block_start {type: tool_use}` SSE events; when the model chose a tool, the stream ended with an empty text buffer, yielding `FinalResponse('')`. Fixed by detecting `tool_use` content blocks in the stream and signalling `hasToolUse: true` on the done chunk, causing the same `complete()` fallback.
+- **Permission prompt silently denied all tool calls** — `PermissionPrompt` used `stdin.readLineSync()` while the terminal was in raw mode (set by `dart_console`'s `Console`); Enter sent `\r` instead of terminating a line, so every prompt returned empty string which defaulted to deny. Fixed by switching `_confirmPrompt` to `console.readKey()` (single-keypress, raw-mode compatible).
+- **`SubagentResult` did not flag `ErrorResponse`/`ToolCallResponse` as errors** — both were silently treated as successful results, passing error messages or raw tool-call JSON to the main agent as valid output. `ErrorResponse` now returns `isError: true` with the provider error; `ToolCallResponse` returns `isError: true` with a "hallucinated tool call" message.
+- **`/allow` had no effect** — `PermissionGate.evaluate()` only checked the constructor-injected allowlist, never `session.permissions.allowedTools` populated by `/allow`. Fixed by adding an `allowedTools` parameter to `evaluate()` and passing the session allowlist from the agent loop.
+- **`/mode` change not persisted on session save/resume** — `_switchMode()` updated `_config` and `_permissionGate.mode` but not `_session.mode`. Fixed.
+- **`/status` missing working directory** — added `Dir` row to `_printStatus()`.
+- **`/context` showed wrong context window** — defaulted to 128k regardless of active model; now resolved at `initialize()` and `_switchModel()` time via `_contextWindowForModel()`.
+- **`/model` tab panel showed only Anthropic models** while Enter opened a full picker including Ollama; fixed by gating the live Ollama fetch behind `stdout.hasTerminal` so non-TTY callers skip the network call.
+- **`/dir` path comparison failed on Windows CI** — test used `Directory.absolute.path` (preserves OS casing) while implementation uses `p.canonicalize()` (lowercases on Windows); fixed by using `p.canonicalize()` on both sides.
+- **Streaming spinner corrupted output** — `Spinner`'s `Timer.periodic` kept firing during token streaming, overwriting each output line with `\r⠇ Thinking...`; fixed by stopping the spinner on the first `onChunk` call.
 - Session permission mode now correctly restored when resuming a session with `--resume`
 - `/clear` no longer resets the session; it only clears the terminal display and reprints the header
 - `/history` help text corrected from "last N exchanges" to "last N messages"

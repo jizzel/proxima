@@ -21,6 +21,7 @@ import '../tools/git/git_log_tool.dart';
 import '../tools/git/git_add_tool.dart';
 import '../tools/git/git_commit_tool.dart';
 import '../tools/git/git_reset_tool.dart';
+import '../tools/agent/delegate_tool.dart';
 import '../permissions/risk_classifier.dart';
 import '../permissions/audit_log.dart';
 import '../permissions/permission_gate.dart';
@@ -159,6 +160,8 @@ class ProximaRepl {
     registry.register(GitCommitTool());
     // Git tools — high risk
     registry.register(GitResetTool());
+    // Agent tools
+    registry.register(DelegateToSubagentTool());
     return registry;
   }
 

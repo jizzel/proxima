@@ -9,6 +9,7 @@ import '../permissions/permission_gate.dart';
 import '../context/context_builder.dart';
 import '../context/project_index.dart';
 import 'stuck_detector.dart';
+import 'subagent_runner.dart';
 
 /// Callbacks for the agent loop to communicate with the renderer.
 abstract class AgentCallbacks {
@@ -57,6 +58,7 @@ class AgentLoop {
     session.addMessage(Message(role: MessageRole.user, content: userInput));
 
     final toolLog = <ToolCall>[];
+    var delegationCount = 0;
     var schemaRetries = 0;
     var llmRetries = 0;
 
@@ -159,6 +161,53 @@ class AgentLoop {
           // User chose to continue — reset the tool log to allow progress.
           toolLog.clear();
         }
+
+        // ── Subagent interception ────────────────────────────────────────────
+        if (toolCall.tool == 'delegate_to_subagent') {
+          String subagentResult;
+
+          if (delegationCount >= _config.maxSubagentDelegations) {
+            subagentResult =
+                'Error: max subagent delegations '
+                '(${_config.maxSubagentDelegations}) reached this turn.';
+          } else {
+            delegationCount++;
+            final runner = SubagentRunner(provider: _provider);
+            final result = await runner.run(
+              agentTypeStr: toolCall.args['agent'] as String? ?? '',
+              task: toolCall.args['task'] as String? ?? '',
+              context: toolCall.args['context'] as String? ?? '',
+              model: session.model,
+            );
+            session.recordUsage(result.usage);
+            subagentResult = result.isError
+                ? 'Subagent error: ${result.errorMessage}'
+                : result.output;
+          }
+
+          session.addMessage(Message(
+            role: MessageRole.assistant,
+            content: toolCall.reasoning,
+            toolName: toolCall.tool,
+            toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+            toolInput: toolCall.args,
+          ));
+          session.addMessage(Message(
+            role: MessageRole.tool,
+            content: subagentResult,
+            toolName: toolCall.tool,
+            toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+          ));
+          callbacks.onToolResult(toolCall.tool, subagentResult, false);
+          session.addTaskRecord(TaskRecord(
+            toolName: toolCall.tool,
+            args: toolCall.args,
+            timestamp: DateTime.now(),
+            success: true,
+          ));
+          continue;
+        }
+        // ── end subagent interception ────────────────────────────────────────
 
         // Permission gate.
         final permission = await _permissionGate.evaluate(

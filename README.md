@@ -251,6 +251,7 @@ Same format. Project config takes precedence over user config.
 | `git_commit` | confirm | Create a commit with a message |
 | `git_reset` | high_risk | Reset working tree to a ref (destructive) |
 | `delete_file` | high_risk | Delete a file (backup created, supports `/undo`) |
+| `delegate_to_subagent` | safe | Delegate to a specialist subagent (`code_analyzer`, `refactor`, `test`) |
 
 Blocked commands (never executed regardless of mode): `rm -rf /`, `sudo`, `curl | sh`, `git push --force`, path traversal, and other destructive patterns.
 
@@ -359,6 +360,8 @@ Proxima is structured as nine explicit layers with strict downward-only dependen
 
 **Critical constraint:** The agent loop (L3) never touches the filesystem or executes tools directly. Every tool call goes through the permission gate (L5) first — this is load-bearing architecture.
 
+**Agent behavior:** Max 2 delegations per turn via `delegate_to_subagent`. Subagents receive no tools and cannot delegate further. Subagent token usage is folded into the session cumulative total visible in `/status`.
+
 ---
 
 ## Roadmap
@@ -370,7 +373,7 @@ The following items are planned for future releases as minor additions in v1:
 - **Local providers** — LM Studio and llama.cpp in addition to Ollama
 - **`delete_file` tool** — high-risk level, requires typed CONFIRM
 - **`git` tools** — ✅ shipped: `git_status`, `git_diff`, `git_log`, `git_add`, `git_commit`, `git_reset`
-- **Subagent support** — agent spawns child agents for parallel sub-tasks
+- **Subagent support** — ✅ shipped: `delegate_to_subagent` with `code_analyzer`, `refactor`, and `test` specialist agents
 
 ### V1.3.0 — Intelligence and search
 - **AST-aware search** — query code structure (functions, classes, imports) without regex

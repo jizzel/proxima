@@ -10,6 +10,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `delegate_to_subagent` tool (safe) — delegates to `code_analyzer`, `refactor`, or `test` specialist subagent; max 2 delegations per turn; subagents are tool-free and cannot nest
+- `SubagentRunner` — single-shot LLM call with specialist system prompt; never throws; subagent token usage folded into session cumulative total
+- `maxSubagentDelegations` config field (default: 2; override via `max_subagent_delegations` in config YAML)
 - `delete_file` tool (high_risk) — permanently deletes a file with automatic `.proxima_bak` backup; compatible with `/undo`; refuses directory deletion
 - `/tools` slash command — lists all registered tools with risk levels and descriptions
 - `/debug [on|off]` slash command — shows or toggles debug output (reasoning + token counts)

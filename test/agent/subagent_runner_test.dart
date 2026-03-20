@@ -117,34 +117,36 @@ void main() {
   // ── SubagentRunner unit tests ─────────────────────────────────────────────
 
   group('SubagentRunner', () {
-    test('code_analyzer — system prompt contains "code analysis", tools is empty, stream is false, not error',
-        () async {
-      final provider = CapturingMockProvider([
-        LLMResponse(
-          body: FinalResponse('{"issues":[],"severity":[],"suggestions":[]}'),
-          usage: const TokenUsage(
-            inputTokens: 10,
-            outputTokens: 5,
-            totalTokens: 15,
+    test(
+      'code_analyzer — system prompt contains "code analysis", tools is empty, stream is false, not error',
+      () async {
+        final provider = CapturingMockProvider([
+          LLMResponse(
+            body: FinalResponse('{"issues":[],"severity":[],"suggestions":[]}'),
+            usage: const TokenUsage(
+              inputTokens: 10,
+              outputTokens: 5,
+              totalTokens: 15,
+            ),
           ),
-        ),
-      ]);
+        ]);
 
-      final runner = SubagentRunner(provider: provider);
-      final result = await runner.run(
-        agentTypeStr: 'code_analyzer',
-        task: 'check for issues',
-        context: 'void main() {}',
-        model: 'mock/model',
-      );
+        final runner = SubagentRunner(provider: provider);
+        final result = await runner.run(
+          agentTypeStr: 'code_analyzer',
+          task: 'check for issues',
+          context: 'void main() {}',
+          model: 'mock/model',
+        );
 
-      expect(result.isError, isFalse);
-      expect(provider.capturedRequests, hasLength(1));
-      final req = provider.capturedRequests.first;
-      expect(req.systemPrompt.toLowerCase(), contains('code analysis'));
-      expect(req.tools, isEmpty);
-      expect(req.stream, isFalse);
-    });
+        expect(result.isError, isFalse);
+        expect(provider.capturedRequests, hasLength(1));
+        final req = provider.capturedRequests.first;
+        expect(req.systemPrompt.toLowerCase(), contains('code analysis'));
+        expect(req.tools, isEmpty);
+        expect(req.stream, isFalse);
+      },
+    );
 
     test('refactor — system prompt contains "refactoring agent"', () async {
       final provider = CapturingMockProvider([
@@ -229,26 +231,29 @@ void main() {
       expect(provider.capturedRequests, isEmpty);
     });
 
-    test('LLM throws — isError true, errorMessage contains "Subagent LLM error", no rethrow',
-        () async {
-      final runner = SubagentRunner(provider: ThrowingProvider());
-      final result = await runner.run(
-        agentTypeStr: 'code_analyzer',
-        task: 'task',
-        context: 'context',
-        model: 'mock/model',
-      );
+    test(
+      'LLM throws — isError true, errorMessage contains "Subagent LLM error", no rethrow',
+      () async {
+        final runner = SubagentRunner(provider: ThrowingProvider());
+        final result = await runner.run(
+          agentTypeStr: 'code_analyzer',
+          task: 'task',
+          context: 'context',
+          model: 'mock/model',
+        );
 
-      expect(result.isError, isTrue);
-      expect(result.errorMessage, contains('Subagent LLM error'));
-    });
+        expect(result.isError, isTrue);
+        expect(result.errorMessage, contains('Subagent LLM error'));
+      },
+    );
 
     test('dryRun — preview contains [DRY RUN] and agent name', () async {
       final tool = DelegateToSubagentTool();
-      final dryRun = await tool.dryRun(
-        {'agent': 'code_analyzer', 'task': 'check it', 'context': '...'},
-        '/tmp',
-      );
+      final dryRun = await tool.dryRun({
+        'agent': 'code_analyzer',
+        'task': 'check it',
+        'context': '...',
+      }, '/tmp');
 
       expect(dryRun.preview, contains('[DRY RUN]'));
       expect(dryRun.preview, contains('code_analyzer'));
@@ -296,239 +301,237 @@ void main() {
       config: config,
     );
 
-    test('delegation result in session history as tool message; token usage includes subagent tokens',
-        () async {
-      // Sequence:
-      // 1. Main agent → delegate_to_subagent tool call
-      // 2. Subagent LLM call → FinalResponse (consumed by SubagentRunner)
-      // 3. Main agent → FinalResponse('Analysis done.')
-      final provider = CapturingMockProvider([
-        LLMResponse(
-          body: ToolCallResponse(
-            ToolCall(
-              tool: 'delegate_to_subagent',
-              args: {
-                'agent': 'code_analyzer',
-                'task': 'check this file',
-                'context': 'int x = 1;',
-              },
-              reasoning: 'delegating to code_analyzer',
+    test(
+      'delegation result in session history as tool message; token usage includes subagent tokens',
+      () async {
+        // Sequence:
+        // 1. Main agent → delegate_to_subagent tool call
+        // 2. Subagent LLM call → FinalResponse (consumed by SubagentRunner)
+        // 3. Main agent → FinalResponse('Analysis done.')
+        final provider = CapturingMockProvider([
+          LLMResponse(
+            body: ToolCallResponse(
+              ToolCall(
+                tool: 'delegate_to_subagent',
+                args: {
+                  'agent': 'code_analyzer',
+                  'task': 'check this file',
+                  'context': 'int x = 1;',
+                },
+                reasoning: 'delegating to code_analyzer',
+              ),
+            ),
+            usage: const TokenUsage(
+              inputTokens: 10,
+              outputTokens: 5,
+              totalTokens: 15,
             ),
           ),
-          usage: const TokenUsage(
-            inputTokens: 10,
-            outputTokens: 5,
-            totalTokens: 15,
-          ),
-        ),
-        // This is consumed by SubagentRunner.run() — main loop sees it as
-        // the subagent response already resolved.
-        LLMResponse(
-          body: FinalResponse('{"issues":[],"severity":[],"suggestions":[]}'),
-          usage: const TokenUsage(
-            inputTokens: 20,
-            outputTokens: 10,
-            totalTokens: 30,
-          ),
-        ),
-        // Main agent final response after seeing subagent result.
-        LLMResponse(
-          body: FinalResponse('Analysis done.'),
-          usage: const TokenUsage(
-            inputTokens: 5,
-            outputTokens: 3,
-            totalTokens: 8,
-          ),
-        ),
-      ]);
-
-      final callbacks = MockCallbacks();
-      final session = ProximaSession.create(config);
-      final result = await makeLoop(provider).runTurn(
-        session,
-        'analyze this code',
-        callbacks,
-      );
-
-      expect(result.status, TaskStatus.completed);
-
-      // Session history must contain a tool-role message for delegate_to_subagent.
-      final toolMessages = result.history
-          .where(
-            (m) =>
-                m.role == MessageRole.tool &&
-                m.toolName == 'delegate_to_subagent',
-          )
-          .toList();
-      expect(toolMessages, hasLength(1));
-      expect(toolMessages.first.content, contains('issues'));
-
-      // Cumulative usage must include subagent tokens (30) + main agent (15 + 8).
-      expect(result.cumulativeUsage.totalTokens, 53);
-
-      // Final response must have fired.
-      expect(
-        callbacks.events.any((e) => e == 'final: Analysis done.'),
-        isTrue,
-      );
-    });
-
-    test('third delegation attempt — result contains "max subagent delegations" and limit "2"',
-        () async {
-      // Three delegation attempts in one turn; only the third should fail.
-      final provider = CapturingMockProvider([
-        // Main agent: 1st delegation
-        LLMResponse(
-          body: ToolCallResponse(
-            ToolCall(
-              tool: 'delegate_to_subagent',
-              args: {
-                'agent': 'code_analyzer',
-                'task': 'first',
-                'context': 'ctx',
-              },
-              reasoning: 'delegating 1',
+          // This is consumed by SubagentRunner.run() — main loop sees it as
+          // the subagent response already resolved.
+          LLMResponse(
+            body: FinalResponse('{"issues":[],"severity":[],"suggestions":[]}'),
+            usage: const TokenUsage(
+              inputTokens: 20,
+              outputTokens: 10,
+              totalTokens: 30,
             ),
           ),
-          usage: TokenUsage.zero,
-        ),
-        // Subagent response for 1st delegation
-        LLMResponse(
-          body: FinalResponse('{"issues":[],"severity":[],"suggestions":[]}'),
-          usage: TokenUsage.zero,
-        ),
-        // Main agent: 2nd delegation
-        LLMResponse(
-          body: ToolCallResponse(
-            ToolCall(
-              tool: 'delegate_to_subagent',
-              args: {
-                'agent': 'refactor',
-                'task': 'second',
-                'context': 'ctx',
-              },
-              reasoning: 'delegating 2',
+          // Main agent final response after seeing subagent result.
+          LLMResponse(
+            body: FinalResponse('Analysis done.'),
+            usage: const TokenUsage(
+              inputTokens: 5,
+              outputTokens: 3,
+              totalTokens: 8,
             ),
           ),
-          usage: TokenUsage.zero,
-        ),
-        // Subagent response for 2nd delegation
-        LLMResponse(
-          body: FinalResponse(
-            '{"proposed_changes":[],"impact_summary":"none"}',
+        ]);
+
+        final callbacks = MockCallbacks();
+        final session = ProximaSession.create(config);
+        final result = await makeLoop(
+          provider,
+        ).runTurn(session, 'analyze this code', callbacks);
+
+        expect(result.status, TaskStatus.completed);
+
+        // Session history must contain a tool-role message for delegate_to_subagent.
+        final toolMessages = result.history
+            .where(
+              (m) =>
+                  m.role == MessageRole.tool &&
+                  m.toolName == 'delegate_to_subagent',
+            )
+            .toList();
+        expect(toolMessages, hasLength(1));
+        expect(toolMessages.first.content, contains('issues'));
+
+        // Cumulative usage must include subagent tokens (30) + main agent (15 + 8).
+        expect(result.cumulativeUsage.totalTokens, 53);
+
+        // Final response must have fired.
+        expect(
+          callbacks.events.any((e) => e == 'final: Analysis done.'),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'third delegation attempt — result contains "max subagent delegations" and limit "2"',
+      () async {
+        // Three delegation attempts in one turn; only the third should fail.
+        final provider = CapturingMockProvider([
+          // Main agent: 1st delegation
+          LLMResponse(
+            body: ToolCallResponse(
+              ToolCall(
+                tool: 'delegate_to_subagent',
+                args: {
+                  'agent': 'code_analyzer',
+                  'task': 'first',
+                  'context': 'ctx',
+                },
+                reasoning: 'delegating 1',
+              ),
+            ),
+            usage: TokenUsage.zero,
           ),
-          usage: TokenUsage.zero,
-        ),
-        // Main agent: 3rd delegation (should be denied by interception)
-        LLMResponse(
-          body: ToolCallResponse(
-            ToolCall(
-              tool: 'delegate_to_subagent',
-              args: {
-                'agent': 'test',
-                'task': 'third',
-                'context': 'ctx',
-              },
-              reasoning: 'delegating 3',
+          // Subagent response for 1st delegation
+          LLMResponse(
+            body: FinalResponse('{"issues":[],"severity":[],"suggestions":[]}'),
+            usage: TokenUsage.zero,
+          ),
+          // Main agent: 2nd delegation
+          LLMResponse(
+            body: ToolCallResponse(
+              ToolCall(
+                tool: 'delegate_to_subagent',
+                args: {'agent': 'refactor', 'task': 'second', 'context': 'ctx'},
+                reasoning: 'delegating 2',
+              ),
+            ),
+            usage: TokenUsage.zero,
+          ),
+          // Subagent response for 2nd delegation
+          LLMResponse(
+            body: FinalResponse(
+              '{"proposed_changes":[],"impact_summary":"none"}',
+            ),
+            usage: TokenUsage.zero,
+          ),
+          // Main agent: 3rd delegation (should be denied by interception)
+          LLMResponse(
+            body: ToolCallResponse(
+              ToolCall(
+                tool: 'delegate_to_subagent',
+                args: {'agent': 'test', 'task': 'third', 'context': 'ctx'},
+                reasoning: 'delegating 3',
+              ),
+            ),
+            usage: TokenUsage.zero,
+          ),
+          // Main agent final response after seeing the limit error
+          LLMResponse(
+            body: FinalResponse('Done after hitting delegation limit.'),
+            usage: TokenUsage.zero,
+          ),
+        ]);
+
+        final callbacks = MockCallbacks();
+        final session = ProximaSession.create(config);
+        final result = await makeLoop(
+          provider,
+        ).runTurn(session, 'do three delegations', callbacks);
+
+        expect(result.status, TaskStatus.completed);
+
+        // Find the tool result for the 3rd delegation — must indicate limit hit.
+        final limitEvent = callbacks.events.firstWhere(
+          (e) => e.contains('result: delegate_to_subagent'),
+          orElse: () => '',
+        );
+        expect(limitEvent, isNotEmpty);
+
+        // The tool-role session message for the blocked 3rd delegation must
+        // contain the limit number.
+        final toolMessages = result.history
+            .where(
+              (m) =>
+                  m.role == MessageRole.tool &&
+                  m.toolName == 'delegate_to_subagent' &&
+                  m.content.contains('max subagent delegations'),
+            )
+            .toList();
+        expect(toolMessages, hasLength(1));
+        expect(toolMessages.first.content, contains('2'));
+      },
+    );
+
+    test(
+      'subagent CompletionRequest has tools: [] (nesting prevention)',
+      () async {
+        final provider = CapturingMockProvider([
+          // Main agent: delegation tool call
+          LLMResponse(
+            body: ToolCallResponse(
+              ToolCall(
+                tool: 'delegate_to_subagent',
+                args: {
+                  'agent': 'test',
+                  'task': 'generate tests',
+                  'context': 'class Foo {}',
+                },
+                reasoning: 'delegating to test agent',
+              ),
+            ),
+            usage: TokenUsage.zero,
+          ),
+          // Subagent response (capturedRequests[1])
+          LLMResponse(
+            body: FinalResponse(
+              '{"test_cases":[],"coverage_gaps":[],"failing_tests":[]}',
+            ),
+            usage: TokenUsage.zero,
+          ),
+          // Main agent final
+          LLMResponse(
+            body: FinalResponse('Tests generated.'),
+            usage: TokenUsage.zero,
+          ),
+        ]);
+
+        final callbacks = MockCallbacks();
+        final session = ProximaSession.create(config);
+        await makeLoop(provider).runTurn(session, 'generate tests', callbacks);
+
+        // capturedRequests[0] = main agent context build (first complete() call)
+        // capturedRequests[1] = subagent call inside SubagentRunner
+        // capturedRequests[2] = main agent context build (after delegation)
+        expect(provider.capturedRequests.length, greaterThanOrEqualTo(2));
+        // The subagent request must have no tools.
+        final subagentReq = provider.capturedRequests[1];
+        expect(subagentReq.tools, isEmpty);
+      },
+    );
+
+    test(
+      'DelegateToSubagentTool.execute() throws ToolError with sentinel message',
+      () {
+        final tool = DelegateToSubagentTool();
+        expect(
+          () =>
+              tool.execute({'agent': 'test', 'task': 't', 'context': 'c'}, '/'),
+          throwsA(
+            isA<ToolError>().having(
+              (e) => e.message,
+              'message',
+              contains('intercepted by the agent loop'),
             ),
           ),
-          usage: TokenUsage.zero,
-        ),
-        // Main agent final response after seeing the limit error
-        LLMResponse(
-          body: FinalResponse('Done after hitting delegation limit.'),
-          usage: TokenUsage.zero,
-        ),
-      ]);
-
-      final callbacks = MockCallbacks();
-      final session = ProximaSession.create(config);
-      final result = await makeLoop(provider).runTurn(
-        session,
-        'do three delegations',
-        callbacks,
-      );
-
-      expect(result.status, TaskStatus.completed);
-
-      // Find the tool result for the 3rd delegation — must indicate limit hit.
-      final limitEvent = callbacks.events.firstWhere(
-        (e) => e.contains('result: delegate_to_subagent'),
-        orElse: () => '',
-      );
-      expect(limitEvent, isNotEmpty);
-
-      // The tool-role session message for the blocked 3rd delegation must
-      // contain the limit number.
-      final toolMessages = result.history
-          .where(
-            (m) =>
-                m.role == MessageRole.tool &&
-                m.toolName == 'delegate_to_subagent' &&
-                m.content.contains('max subagent delegations'),
-          )
-          .toList();
-      expect(toolMessages, hasLength(1));
-      expect(toolMessages.first.content, contains('2'));
-    });
-
-    test('subagent CompletionRequest has tools: [] (nesting prevention)', () async {
-      final provider = CapturingMockProvider([
-        // Main agent: delegation tool call
-        LLMResponse(
-          body: ToolCallResponse(
-            ToolCall(
-              tool: 'delegate_to_subagent',
-              args: {
-                'agent': 'test',
-                'task': 'generate tests',
-                'context': 'class Foo {}',
-              },
-              reasoning: 'delegating to test agent',
-            ),
-          ),
-          usage: TokenUsage.zero,
-        ),
-        // Subagent response (capturedRequests[1])
-        LLMResponse(
-          body: FinalResponse(
-            '{"test_cases":[],"coverage_gaps":[],"failing_tests":[]}',
-          ),
-          usage: TokenUsage.zero,
-        ),
-        // Main agent final
-        LLMResponse(
-          body: FinalResponse('Tests generated.'),
-          usage: TokenUsage.zero,
-        ),
-      ]);
-
-      final callbacks = MockCallbacks();
-      final session = ProximaSession.create(config);
-      await makeLoop(provider).runTurn(session, 'generate tests', callbacks);
-
-      // capturedRequests[0] = main agent context build (first complete() call)
-      // capturedRequests[1] = subagent call inside SubagentRunner
-      // capturedRequests[2] = main agent context build (after delegation)
-      expect(provider.capturedRequests.length, greaterThanOrEqualTo(2));
-      // The subagent request must have no tools.
-      final subagentReq = provider.capturedRequests[1];
-      expect(subagentReq.tools, isEmpty);
-    });
-
-    test('DelegateToSubagentTool.execute() throws ToolError with sentinel message',
-        () {
-      final tool = DelegateToSubagentTool();
-      expect(
-        () => tool.execute({'agent': 'test', 'task': 't', 'context': 'c'}, '/'),
-        throwsA(
-          isA<ToolError>().having(
-            (e) => e.message,
-            'message',
-            contains('intercepted by the agent loop'),
-          ),
-        ),
-      );
-    });
+        );
+      },
+    );
   });
 }

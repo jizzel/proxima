@@ -254,12 +254,15 @@ void main() {
     expect(out, contains(session.model));
   });
 
-  test('13. /status output contains model name and working directory', () async {
-    await handle('/status');
-    final out = renderer.output;
-    expect(out, contains(session.model));
-    expect(out, contains(session.workingDir));
-  });
+  test(
+    '13. /status output contains model name and working directory',
+    () async {
+      await handle('/status');
+      final out = renderer.output;
+      expect(out, contains(session.model));
+      expect(out, contains(session.workingDir));
+    },
+  );
 
   test('14. /status prints token counts', () async {
     session.recordUsage(
@@ -750,15 +753,17 @@ void main() {
 
   // ── /mode persists to session ──────────────────────────────────────────────
 
-  test('56. /mode updates session.mode so it is persisted on save/resume',
-      () async {
-    expect(session.mode, SessionMode.confirm); // default
+  test(
+    '56. /mode updates session.mode so it is persisted on save/resume',
+    () async {
+      expect(session.mode, SessionMode.confirm); // default
 
-    // The handler updates session.mode directly.
-    await handle('/mode auto');
+      // The handler updates session.mode directly.
+      await handle('/mode auto');
 
-    expect(session.mode, SessionMode.auto);
-  });
+      expect(session.mode, SessionMode.auto);
+    },
+  );
 
   test('57. /mode safe updates session.mode to safe', () async {
     await handle('/mode safe');

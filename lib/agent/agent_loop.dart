@@ -170,26 +170,32 @@ class AgentLoop {
             final preview = tool != null
                 ? '[DRY RUN] ${(await tool.dryRun(toolCall.args, session.workingDir)).preview}'
                 : '[DRY RUN] Would delegate to ${toolCall.args['agent']}';
-            session.addMessage(Message(
-              role: MessageRole.assistant,
-              content: toolCall.reasoning,
-              toolName: toolCall.tool,
-              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
-              toolInput: toolCall.args,
-            ));
-            session.addMessage(Message(
-              role: MessageRole.tool,
-              content: preview,
-              toolName: toolCall.tool,
-              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
-            ));
+            session.addMessage(
+              Message(
+                role: MessageRole.assistant,
+                content: toolCall.reasoning,
+                toolName: toolCall.tool,
+                toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+                toolInput: toolCall.args,
+              ),
+            );
+            session.addMessage(
+              Message(
+                role: MessageRole.tool,
+                content: preview,
+                toolName: toolCall.tool,
+                toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+              ),
+            );
             callbacks.onToolResult(toolCall.tool, preview, false);
-            session.addTaskRecord(TaskRecord(
-              toolName: toolCall.tool,
-              args: toolCall.args,
-              timestamp: DateTime.now(),
-              success: true,
-            ));
+            session.addTaskRecord(
+              TaskRecord(
+                toolName: toolCall.tool,
+                args: toolCall.args,
+                timestamp: DateTime.now(),
+                success: true,
+              ),
+            );
             continue;
           }
 
@@ -217,30 +223,36 @@ class AgentLoop {
                 : result.output;
           }
 
-          session.addMessage(Message(
-            role: MessageRole.assistant,
-            content: toolCall.reasoning,
-            toolName: toolCall.tool,
-            toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
-            toolInput: toolCall.args,
-          ));
-          session.addMessage(Message(
-            role: MessageRole.tool,
-            content: subagentResult,
-            toolName: toolCall.tool,
-            toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
-          ));
+          session.addMessage(
+            Message(
+              role: MessageRole.assistant,
+              content: toolCall.reasoning,
+              toolName: toolCall.tool,
+              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+              toolInput: toolCall.args,
+            ),
+          );
+          session.addMessage(
+            Message(
+              role: MessageRole.tool,
+              content: subagentResult,
+              toolName: toolCall.tool,
+              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+            ),
+          );
           callbacks.onToolResult(
             toolCall.tool,
             subagentResult,
             delegationFailed,
           );
-          session.addTaskRecord(TaskRecord(
-            toolName: toolCall.tool,
-            args: toolCall.args,
-            timestamp: DateTime.now(),
-            success: !delegationFailed,
-          ));
+          session.addTaskRecord(
+            TaskRecord(
+              toolName: toolCall.tool,
+              args: toolCall.args,
+              timestamp: DateTime.now(),
+              success: !delegationFailed,
+            ),
+          );
           continue;
         }
         // ── end subagent interception ────────────────────────────────────────

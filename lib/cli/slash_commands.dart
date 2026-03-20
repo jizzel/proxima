@@ -178,7 +178,13 @@ class SlashCommandHandler {
     stdout.writeln(
       dim('  Select model  ↑/↓ navigate · Enter confirm · Esc cancel'),
     );
-    _renderModelList(console, models, selected, currentModel, firstRender: true);
+    _renderModelList(
+      console,
+      models,
+      selected,
+      currentModel,
+      firstRender: true,
+    );
 
     while (true) {
       final key = console.readKey();

@@ -29,11 +29,11 @@ class GitResetTool implements ProximaTool {
   Future<String> execute(Map<String, dynamic> args, String workingDir) async {
     final ref = args['ref'] as String? ?? 'HEAD';
 
-    final result = await Process.run(
-      'git',
-      ['reset', '--hard', ref],
-      workingDirectory: workingDir,
-    );
+    final result = await Process.run('git', [
+      'reset',
+      '--hard',
+      ref,
+    ], workingDirectory: workingDir);
     if (result.exitCode != 0) {
       throw ToolError(name, 'git_reset failed: ${result.stderr}');
     }

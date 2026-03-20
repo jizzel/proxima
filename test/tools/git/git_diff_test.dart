@@ -12,16 +12,16 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_git_diff_');
     await Process.run('git', ['init'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['config', 'user.email', 'test@test.com'],
-      workingDirectory: tempDir.path,
-    );
-    await Process.run(
-      'git',
-      ['config', 'user.name', 'Test'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'config',
+      'user.email',
+      'test@test.com',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'config',
+      'user.name',
+      'Test',
+    ], workingDirectory: tempDir.path);
     tool = GitDiffTool();
   });
 
@@ -37,12 +37,15 @@ void main() {
   test('shows unstaged changes', () async {
     final file = File(p.join(tempDir.path, 'foo.txt'));
     await file.writeAsString('initial');
-    await Process.run('git', ['add', 'foo.txt'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['commit', '-m', 'init'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'add',
+      'foo.txt',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'commit',
+      '-m',
+      'init',
+    ], workingDirectory: tempDir.path);
     await file.writeAsString('changed');
     final result = await tool.execute({}, tempDir.path);
     expect(result, contains('foo.txt'));
@@ -53,14 +56,20 @@ void main() {
   test('shows staged diff with staged:true', () async {
     final file = File(p.join(tempDir.path, 'bar.txt'));
     await file.writeAsString('first');
-    await Process.run('git', ['add', 'bar.txt'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['commit', '-m', 'init'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'add',
+      'bar.txt',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'commit',
+      '-m',
+      'init',
+    ], workingDirectory: tempDir.path);
     await file.writeAsString('second');
-    await Process.run('git', ['add', 'bar.txt'], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'add',
+      'bar.txt',
+    ], workingDirectory: tempDir.path);
     final result = await tool.execute({'staged': true}, tempDir.path);
     expect(result, contains('bar.txt'));
   });
@@ -75,10 +84,7 @@ void main() {
   test('throws ToolError for non-git directory', () async {
     final nonGit = await Directory.systemTemp.createTemp('proxima_nongit_');
     addTearDown(() => nonGit.delete(recursive: true));
-    expect(
-      () => tool.execute({}, nonGit.path),
-      throwsA(isA<ToolError>()),
-    );
+    expect(() => tool.execute({}, nonGit.path), throwsA(isA<ToolError>()));
   });
 
   test('dryRun preview reflects staged flag', () async {

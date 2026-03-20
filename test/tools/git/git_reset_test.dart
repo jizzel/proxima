@@ -12,16 +12,16 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_git_reset_');
     await Process.run('git', ['init'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['config', 'user.email', 'test@test.com'],
-      workingDirectory: tempDir.path,
-    );
-    await Process.run(
-      'git',
-      ['config', 'user.name', 'Test'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'config',
+      'user.email',
+      'test@test.com',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'config',
+      'user.name',
+      'Test',
+    ], workingDirectory: tempDir.path);
     tool = GitResetTool();
   });
 
@@ -33,11 +33,11 @@ void main() {
     final file = File(p.join(tempDir.path, 'f.txt'));
     await file.writeAsString('original');
     await Process.run('git', ['add', 'f.txt'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['commit', '-m', 'base'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'commit',
+      '-m',
+      'base',
+    ], workingDirectory: tempDir.path);
     await file.writeAsString('modified');
 
     final result = await tool.execute({'ref': 'HEAD'}, tempDir.path);
@@ -51,11 +51,11 @@ void main() {
     final file = File(p.join(tempDir.path, 'g.txt'));
     await file.writeAsString('v1');
     await Process.run('git', ['add', 'g.txt'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['commit', '-m', 'first'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'commit',
+      '-m',
+      'first',
+    ], workingDirectory: tempDir.path);
     await file.writeAsString('v2');
     await Process.run('git', ['add', 'g.txt'], workingDirectory: tempDir.path);
 

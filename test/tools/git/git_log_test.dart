@@ -12,16 +12,16 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_git_log_');
     await Process.run('git', ['init'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['config', 'user.email', 'test@test.com'],
-      workingDirectory: tempDir.path,
-    );
-    await Process.run(
-      'git',
-      ['config', 'user.name', 'Test'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'config',
+      'user.email',
+      'test@test.com',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'config',
+      'user.name',
+      'Test',
+    ], workingDirectory: tempDir.path);
     tool = GitLogTool();
   });
 
@@ -38,11 +38,11 @@ void main() {
     final file = File(p.join(tempDir.path, 'a.txt'));
     await file.writeAsString('hello');
     await Process.run('git', ['add', 'a.txt'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['commit', '-m', 'initial commit'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'commit',
+      '-m',
+      'initial commit',
+    ], workingDirectory: tempDir.path);
     final result = await tool.execute({}, tempDir.path);
     expect(result, contains('initial commit'));
   });
@@ -51,12 +51,15 @@ void main() {
     for (var i = 1; i <= 5; i++) {
       final file = File(p.join(tempDir.path, 'file$i.txt'));
       await file.writeAsString('content $i');
-      await Process.run('git', ['add', 'file$i.txt'], workingDirectory: tempDir.path);
-      await Process.run(
-        'git',
-        ['commit', '-m', 'commit $i'],
-        workingDirectory: tempDir.path,
-      );
+      await Process.run('git', [
+        'add',
+        'file$i.txt',
+      ], workingDirectory: tempDir.path);
+      await Process.run('git', [
+        'commit',
+        '-m',
+        'commit $i',
+      ], workingDirectory: tempDir.path);
     }
     final result = await tool.execute({'limit': 3}, tempDir.path);
     final lines = result.trim().split('\n');
@@ -73,14 +76,14 @@ void main() {
   test('throws ToolError for non-git directory', () async {
     final nonGit = await Directory.systemTemp.createTemp('proxima_nongit_');
     addTearDown(() => nonGit.delete(recursive: true));
-    expect(
-      () => tool.execute({}, nonGit.path),
-      throwsA(isA<ToolError>()),
-    );
+    expect(() => tool.execute({}, nonGit.path), throwsA(isA<ToolError>()));
   });
 
   test('dryRun preview includes limit and path', () async {
-    final result = await tool.dryRun({'limit': 5, 'path': 'lib/'}, tempDir.path);
+    final result = await tool.dryRun({
+      'limit': 5,
+      'path': 'lib/',
+    }, tempDir.path);
     expect(result.preview, contains('-n 5'));
     expect(result.preview, contains('lib/'));
     expect(result.riskLevel, equals(RiskLevel.safe));

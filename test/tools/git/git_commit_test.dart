@@ -12,16 +12,16 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_git_commit_');
     await Process.run('git', ['init'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['config', 'user.email', 'test@test.com'],
-      workingDirectory: tempDir.path,
-    );
-    await Process.run(
-      'git',
-      ['config', 'user.name', 'Test'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'config',
+      'user.email',
+      'test@test.com',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'config',
+      'user.name',
+      'Test',
+    ], workingDirectory: tempDir.path);
     tool = GitCommitTool();
   });
 
@@ -32,20 +32,21 @@ void main() {
   test('creates a commit with staged changes', () async {
     final file = File(p.join(tempDir.path, 'readme.txt'));
     await file.writeAsString('hello world');
-    await Process.run('git', ['add', 'readme.txt'], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'add',
+      'readme.txt',
+    ], workingDirectory: tempDir.path);
 
-    final result = await tool.execute(
-      {'message': 'initial commit'},
-      tempDir.path,
-    );
+    final result = await tool.execute({
+      'message': 'initial commit',
+    }, tempDir.path);
     expect(result, isNotEmpty);
 
     // Verify commit exists
-    final log = await Process.run(
-      'git',
-      ['log', '--oneline'],
-      workingDirectory: tempDir.path,
-    );
+    final log = await Process.run('git', [
+      'log',
+      '--oneline',
+    ], workingDirectory: tempDir.path);
     expect(log.stdout as String, contains('initial commit'));
   });
 

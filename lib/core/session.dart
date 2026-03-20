@@ -86,17 +86,14 @@ class SessionPermissions {
     'ignored_patterns': ignoredPatterns,
   };
 
-  factory SessionPermissions.fromJson(Map<String, dynamic> json) =>
-      SessionPermissions(
-        allowedTools: Set<String>.from(json['allowed_tools'] as List? ?? []),
-        allowedCommands: Set<String>.from(
-          json['allowed_commands'] as List? ?? [],
-        ),
-        deniedTools: Set<String>.from(json['denied_tools'] as List? ?? []),
-        ignoredPatterns: List<String>.from(
-          json['ignored_patterns'] as List? ?? [],
-        ),
-      );
+  factory SessionPermissions.fromJson(
+    Map<String, dynamic> json,
+  ) => SessionPermissions(
+    allowedTools: Set<String>.from(json['allowed_tools'] as List? ?? []),
+    allowedCommands: Set<String>.from(json['allowed_commands'] as List? ?? []),
+    deniedTools: Set<String>.from(json['denied_tools'] as List? ?? []),
+    ignoredPatterns: List<String>.from(json['ignored_patterns'] as List? ?? []),
+  );
 }
 
 /// The stateful source of truth for a Proxima session.

@@ -16,10 +16,7 @@ class GitCommitTool implements ProximaTool {
   Map<String, dynamic> get inputSchema => {
     'type': 'object',
     'properties': {
-      'message': {
-        'type': 'string',
-        'description': 'Commit message.',
-      },
+      'message': {'type': 'string', 'description': 'Commit message.'},
     },
     'required': ['message'],
   };
@@ -28,11 +25,11 @@ class GitCommitTool implements ProximaTool {
   Future<String> execute(Map<String, dynamic> args, String workingDir) async {
     final message = args['message'] as String;
 
-    final result = await Process.run(
-      'git',
-      ['commit', '-m', message],
-      workingDirectory: workingDir,
-    );
+    final result = await Process.run('git', [
+      'commit',
+      '-m',
+      message,
+    ], workingDirectory: workingDir);
     if (result.exitCode != 0) {
       throw ToolError(name, 'git_commit failed: ${result.stderr}');
     }

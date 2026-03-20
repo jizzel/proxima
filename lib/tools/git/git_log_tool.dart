@@ -69,8 +69,7 @@ class GitLogTool implements ProximaTool {
   ) async {
     final limit = args['limit'] as int? ?? 20;
     final path = args['path'] as String?;
-    final cmd =
-        'git log --oneline -n $limit${path != null ? ' -- $path' : ''}';
+    final cmd = 'git log --oneline -n $limit${path != null ? ' -- $path' : ''}';
     return DryRunResult(preview: 'Would run: $cmd', riskLevel: riskLevel);
   }
 }

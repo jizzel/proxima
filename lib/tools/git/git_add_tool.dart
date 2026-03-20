@@ -34,11 +34,10 @@ class GitAddTool implements ProximaTool {
       throw ToolError(name, 'Path "$path" is outside working directory.');
     }
 
-    final result = await Process.run(
-      'git',
-      ['add', path],
-      workingDirectory: workingDir,
-    );
+    final result = await Process.run('git', [
+      'add',
+      path,
+    ], workingDirectory: workingDir);
     if (result.exitCode != 0) {
       throw ToolError(name, 'git_add failed: ${result.stderr}');
     }

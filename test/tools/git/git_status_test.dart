@@ -12,16 +12,16 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_git_status_');
     await Process.run('git', ['init'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['config', 'user.email', 'test@test.com'],
-      workingDirectory: tempDir.path,
-    );
-    await Process.run(
-      'git',
-      ['config', 'user.name', 'Test'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'config',
+      'user.email',
+      'test@test.com',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'config',
+      'user.name',
+      'Test',
+    ], workingDirectory: tempDir.path);
     tool = GitStatusTool();
   });
 
@@ -35,7 +35,9 @@ void main() {
   });
 
   test('shows untracked file', () async {
-    await File(p.join(tempDir.path, 'hello.dart')).writeAsString('void main(){}');
+    await File(
+      p.join(tempDir.path, 'hello.dart'),
+    ).writeAsString('void main(){}');
     final result = await tool.execute({}, tempDir.path);
     expect(result, contains('hello.dart'));
     expect(result, contains('?'));
@@ -44,7 +46,10 @@ void main() {
   test('shows staged file', () async {
     final file = File(p.join(tempDir.path, 'staged.dart'));
     await file.writeAsString('// staged');
-    await Process.run('git', ['add', 'staged.dart'], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'add',
+      'staged.dart',
+    ], workingDirectory: tempDir.path);
     final result = await tool.execute({}, tempDir.path);
     expect(result, contains('staged.dart'));
   });
@@ -52,10 +57,7 @@ void main() {
   test('throws ToolError for non-git directory', () async {
     final nonGit = await Directory.systemTemp.createTemp('proxima_nongit_');
     addTearDown(() => nonGit.delete(recursive: true));
-    expect(
-      () => tool.execute({}, nonGit.path),
-      throwsA(isA<ToolError>()),
-    );
+    expect(() => tool.execute({}, nonGit.path), throwsA(isA<ToolError>()));
   });
 
   test('dryRun returns expected preview', () async {

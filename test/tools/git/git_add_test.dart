@@ -12,16 +12,16 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_git_add_');
     await Process.run('git', ['init'], workingDirectory: tempDir.path);
-    await Process.run(
-      'git',
-      ['config', 'user.email', 'test@test.com'],
-      workingDirectory: tempDir.path,
-    );
-    await Process.run(
-      'git',
-      ['config', 'user.name', 'Test'],
-      workingDirectory: tempDir.path,
-    );
+    await Process.run('git', [
+      'config',
+      'user.email',
+      'test@test.com',
+    ], workingDirectory: tempDir.path);
+    await Process.run('git', [
+      'config',
+      'user.name',
+      'Test',
+    ], workingDirectory: tempDir.path);
     tool = GitAddTool();
   });
 
@@ -35,11 +35,10 @@ void main() {
     expect(result, contains('hello.dart'));
 
     // Verify the file is actually staged
-    final status = await Process.run(
-      'git',
-      ['status', '--short'],
-      workingDirectory: tempDir.path,
-    );
+    final status = await Process.run('git', [
+      'status',
+      '--short',
+    ], workingDirectory: tempDir.path);
     expect(status.stdout as String, contains('A'));
   });
 

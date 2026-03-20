@@ -22,11 +22,10 @@ class GitStatusTool implements ProximaTool {
 
   @override
   Future<String> execute(Map<String, dynamic> args, String workingDir) async {
-    final result = await Process.run(
-      'git',
-      ['status', '--short'],
-      workingDirectory: workingDir,
-    );
+    final result = await Process.run('git', [
+      'status',
+      '--short',
+    ], workingDirectory: workingDir);
     if (result.exitCode != 0) {
       throw ToolError(name, 'git_status failed: ${result.stderr}');
     }
@@ -38,9 +37,8 @@ class GitStatusTool implements ProximaTool {
   Future<DryRunResult> dryRun(
     Map<String, dynamic> args,
     String workingDir,
-  ) async =>
-      DryRunResult(
-        preview: 'Would run: git status --short',
-        riskLevel: riskLevel,
-      );
+  ) async => DryRunResult(
+    preview: 'Would run: git status --short',
+    riskLevel: riskLevel,
+  );
 }

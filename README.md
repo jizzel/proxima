@@ -175,6 +175,13 @@ Switch models from inside the REPL:
 | `/history [--last N]` | Show conversation history (optionally last N messages) |
 | `/files` | Show files read or written this session |
 | `/context` | Show token budget breakdown |
+| `/tools` | List all registered tools with risk levels |
+| `/debug [on\|off]` | Show or toggle debug output (reasoning + token counts) |
+| `/deny <tool>` | Block a tool for this session |
+| `/permissions` | Show current session permissions (allowed, denied, ignored) |
+| `/dir <path>` | Switch working directory |
+| `/ignore <pattern>` | Exclude a glob pattern from context |
+| `/snapshot` | Save a session snapshot (resume with `--resume <id>`) |
 | `/exit` | Exit Proxima |
 
 ---
@@ -243,6 +250,7 @@ Same format. Project config takes precedence over user config.
 | `git_add` | confirm | Stage a file for commit |
 | `git_commit` | confirm | Create a commit with a message |
 | `git_reset` | high_risk | Reset working tree to a ref (destructive) |
+| `delete_file` | high_risk | Delete a file (backup created, supports `/undo`) |
 
 Blocked commands (never executed regardless of mode): `rm -rf /`, `sudo`, `curl | sh`, `git push --force`, path traversal, and other destructive patterns.
 

@@ -161,7 +161,11 @@ class AgentLoop {
         }
 
         // Permission gate.
-        final permission = await _permissionGate.evaluate(toolCall, session.id);
+        final permission = await _permissionGate.evaluate(
+          toolCall,
+          session.id,
+          deniedTools: session.permissions.deniedTools,
+        );
 
         if (permission.decision == GateDecision.deny) {
           final denyMessage = 'Tool call denied: ${permission.reason}';

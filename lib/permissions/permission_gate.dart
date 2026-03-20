@@ -33,7 +33,28 @@ class PermissionGate {
 
   /// Evaluate whether [toolCall] can execute.
   /// [sessionId] is used for audit logging.
-  Future<PermissionResult> evaluate(ToolCall toolCall, String sessionId) async {
+  /// [deniedTools] is the session-level deny list populated via /deny.
+  Future<PermissionResult> evaluate(
+    ToolCall toolCall,
+    String sessionId, {
+    Set<String> deniedTools = const {},
+  }) async {
+    // 0. Session deny list — belt-and-suspenders check for /deny.
+    if (deniedTools.contains(toolCall.tool)) {
+      await _auditLog.record(
+        sessionId: sessionId,
+        tool: toolCall.tool,
+        args: toolCall.args,
+        riskLevel: RiskLevel.blocked,
+        decision: 'denied_by_session',
+        reason: 'Tool denied via /deny',
+      );
+      return const PermissionResult(
+        GateDecision.deny,
+        reason: 'Tool denied for this session (/deny)',
+      );
+    }
+
     final riskLevel = _classifier.classify(toolCall);
 
     // 1. Blocked — hard reject, no prompt.

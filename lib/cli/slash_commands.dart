@@ -2,10 +2,12 @@ import 'dart:io';
 import 'package:dart_console/dart_console.dart';
 import '../context/token_budget.dart';
 import '../core/session.dart';
+import '../core/session_storage.dart';
 import '../core/types.dart';
 import '../providers/ollama_provider.dart';
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
+import '../tools/tool_registry.dart';
 
 /// Handles /commands typed in the REPL.
 class SlashCommandHandler {
@@ -24,6 +26,11 @@ class SlashCommandHandler {
     List<String> ollamaModels = const [],
     void Function(SessionMode mode)? onModeSwitch,
     int contextWindow = 128000,
+    void Function(bool debug)? onDebugSwitch,
+    bool debugState = false,
+    ToolRegistry? toolRegistry,
+    void Function(String dir)? onDirSwitch,
+    SessionStorage? sessionStorage,
   }) async {
     final trimmed = input.trim();
     if (!trimmed.startsWith('/')) return false;
@@ -65,6 +72,30 @@ class SlashCommandHandler {
         _printFiles(session);
       case '/context':
         _printContext(contextWindow);
+      case '/tools':
+        _printTools(toolRegistry);
+      case '/debug':
+        _handleDebug(rest, debugState, onDebugSwitch);
+      case '/deny':
+        if (rest.isEmpty) {
+          _renderer.printDim('Usage: /deny <tool_name>');
+        } else {
+          session.permissions = session.permissions.withDeniedTool(rest);
+          _renderer.print('Denied tool for this session: $rest');
+        }
+      case '/permissions':
+        _printPermissions(session);
+      case '/dir':
+        _handleDir(rest, onDirSwitch);
+      case '/ignore':
+        if (rest.isEmpty) {
+          _renderer.printDim('Usage: /ignore <glob_pattern>');
+        } else {
+          session.permissions = session.permissions.withIgnoredPattern(rest);
+          _renderer.print('Ignoring pattern: $rest');
+        }
+      case '/snapshot':
+        await _handleSnapshot(session, sessionStorage);
       default:
         _renderer.printDim(
           'Unknown command: $command. Type /help for commands.',
@@ -236,6 +267,13 @@ Slash commands:
   /history [--last N] Show conversation history (optionally last N messages)
   /files             Show files read/written this session
   /context           Show token budget breakdown
+  /tools             List all registered tools with risk levels
+  /debug [on|off]    Show or toggle debug output
+  /deny <tool>       Deny a tool for this session
+  /permissions       Show current session permissions
+  /dir <path>        Switch working directory
+  /ignore <pattern>  Exclude a glob pattern from context
+  /snapshot          Save a session snapshot
 ''');
   }
 
@@ -404,5 +442,79 @@ Slash commands:
       buf.write(s[i]);
     }
     return buf.toString();
+  }
+
+  void _printTools(ToolRegistry? registry) {
+    _renderer.print('');
+    if (registry == null) {
+      _renderer.printDim('  (no registry available)');
+      _renderer.print('');
+      return;
+    }
+    _renderer.print('  tools:');
+    for (final tool in registry.all()) {
+      final namePad = tool.name.padRight(20);
+      final riskPad = tool.riskLevel.name.padRight(10);
+      _renderer.print('    $namePad $riskPad ${tool.description}');
+    }
+    _renderer.print('');
+  }
+
+  void _handleDebug(
+    String arg,
+    bool currentState,
+    void Function(bool debug)? onDebugSwitch,
+  ) {
+    if (arg.isEmpty) {
+      _renderer.printDim('  debug: ${currentState ? 'on' : 'off'}');
+      return;
+    }
+    if (arg == 'on' || arg == 'off') {
+      onDebugSwitch?.call(arg == 'on');
+    } else {
+      _renderer.printError('Usage: /debug on|off');
+    }
+  }
+
+  void _printPermissions(ProximaSession session) {
+    final p = session.permissions;
+    _renderer.print('');
+    _renderer.print('  Permissions:');
+    _renderer.print(
+      '    allowed tools:    ${p.allowedTools.isEmpty ? '(none)' : p.allowedTools.join(', ')}',
+    );
+    _renderer.print(
+      '    denied tools:     ${p.deniedTools.isEmpty ? '(none)' : p.deniedTools.join(', ')}',
+    );
+    _renderer.print(
+      '    ignored patterns: ${p.ignoredPatterns.isEmpty ? '(none)' : p.ignoredPatterns.join(', ')}',
+    );
+    _renderer.print('');
+  }
+
+  void _handleDir(String path, void Function(String dir)? onDirSwitch) {
+    if (path.isEmpty) {
+      _renderer.printDim('Usage: /dir <path>');
+      return;
+    }
+    final resolved = Directory(path).absolute.path;
+    if (!Directory(resolved).existsSync()) {
+      _renderer.printError('Directory not found: $path');
+      return;
+    }
+    onDirSwitch?.call(resolved);
+  }
+
+  Future<void> _handleSnapshot(
+    ProximaSession session,
+    SessionStorage? sessionStorage,
+  ) async {
+    if (sessionStorage == null) {
+      _renderer.printDim('  (session storage not available)');
+      return;
+    }
+    await sessionStorage.save(session);
+    _renderer.printSuccess('Snapshot saved: ${session.id}');
+    _renderer.printDim('Resume with: proxima --resume ${session.id}');
   }
 }

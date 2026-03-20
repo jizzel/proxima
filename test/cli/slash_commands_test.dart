@@ -2,9 +2,13 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:proxima/cli/slash_commands.dart';
 import 'package:proxima/core/session.dart';
+import 'package:proxima/core/session_storage.dart';
 import 'package:proxima/core/config.dart';
 import 'package:proxima/core/types.dart';
 import 'package:proxima/renderer/renderer.dart';
+import 'package:proxima/tools/tool_registry.dart';
+import 'package:proxima/tools/file/read_file_tool.dart';
+import 'package:proxima/tools/file/write_file_tool.dart';
 
 /// A fake [Renderer] that captures printed output to a [StringBuffer]
 /// instead of writing to stdout.
@@ -49,6 +53,8 @@ void main() {
   late String? modelSwitchArg;
   late bool exitCalled;
   late SessionMode? modeSwitchArg;
+  late bool? debugSwitchArg;
+  late String? dirSwitchArg;
 
   setUp(() {
     renderer = FakeRenderer();
@@ -58,6 +64,8 @@ void main() {
     modelSwitchArg = null;
     exitCalled = false;
     modeSwitchArg = null;
+    debugSwitchArg = null;
+    dirSwitchArg = null;
   });
 
   // ── helper ─────────────────────────────────────────────────────────────────
@@ -66,6 +74,9 @@ void main() {
     String input, {
     List<String> ollamaModels = const [],
     int contextWindow = 128000,
+    ToolRegistry? toolRegistry,
+    bool debugState = false,
+    SessionStorage? sessionStorage,
   }) => handler.handle(
     input,
     session,
@@ -75,6 +86,11 @@ void main() {
     ollamaModels: ollamaModels,
     onModeSwitch: (m) => modeSwitchArg = m,
     contextWindow: contextWindow,
+    onDebugSwitch: (d) => debugSwitchArg = d,
+    debugState: debugState,
+    toolRegistry: toolRegistry,
+    onDirSwitch: (d) => dirSwitchArg = d,
+    sessionStorage: sessionStorage,
   );
 
   // ── /help ──────────────────────────────────────────────────────────────────
@@ -473,4 +489,161 @@ void main() {
       expect(out, contains('3,000'));
     },
   );
+
+  // ── /tools ─────────────────────────────────────────────────────────────────
+
+  test(
+    '35. /tools with registry prints tool names and risk levels',
+    () async {
+      final registry = ToolRegistry();
+      registry.register(ReadFileTool());
+      registry.register(WriteFileTool());
+
+      final result = await handle('/tools', toolRegistry: registry);
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains('read_file'));
+      expect(out, contains('write_file'));
+      expect(out, contains('safe'));
+      expect(out, contains('confirm'));
+    },
+  );
+
+  test('36. /tools with null registry prints graceful fallback', () async {
+    final result = await handle('/tools');
+    expect(result, isTrue);
+    expect(renderer.output, contains('no registry available'));
+  });
+
+  // ── /debug ─────────────────────────────────────────────────────────────────
+
+  test('37. /debug on calls onDebugSwitch with true', () async {
+    final result = await handle('/debug on');
+    expect(result, isTrue);
+    expect(debugSwitchArg, isTrue);
+  });
+
+  test('38. /debug off calls onDebugSwitch with false', () async {
+    final result = await handle('/debug off');
+    expect(result, isTrue);
+    expect(debugSwitchArg, isFalse);
+  });
+
+  test('39. /debug (no arg) prints current state', () async {
+    final result = await handle('/debug', debugState: true);
+    expect(result, isTrue);
+    expect(renderer.output, contains('on'));
+    expect(debugSwitchArg, isNull);
+  });
+
+  // ── /deny ──────────────────────────────────────────────────────────────────
+
+  test('40. /deny read_file adds to session.permissions.deniedTools', () async {
+    expect(session.permissions.deniedTools, isEmpty);
+
+    final result = await handle('/deny read_file');
+    expect(result, isTrue);
+    expect(session.permissions.deniedTools, contains('read_file'));
+  });
+
+  test('41. /deny (no arg) prints usage', () async {
+    final result = await handle('/deny');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(session.permissions.deniedTools, isEmpty);
+  });
+
+  // ── /permissions ───────────────────────────────────────────────────────────
+
+  test(
+    '42. /permissions prints allowed, denied, and ignored sections',
+    () async {
+      session.permissions = session.permissions
+          .withAllowedTool('write_file')
+          .withDeniedTool('run_command')
+          .withIgnoredPattern('*.log');
+
+      final result = await handle('/permissions');
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains('allowed tools'));
+      expect(out, contains('write_file'));
+      expect(out, contains('denied tools'));
+      expect(out, contains('run_command'));
+      expect(out, contains('ignored patterns'));
+      expect(out, contains('*.log'));
+    },
+  );
+
+  // ── /dir ───────────────────────────────────────────────────────────────────
+
+  test('43. /dir <valid path> calls onDirSwitch with resolved path', () async {
+    final result = await handle('/dir ${Directory.systemTemp.path}');
+    expect(result, isTrue);
+    expect(dirSwitchArg, isNotNull);
+    expect(
+      dirSwitchArg,
+      Directory(Directory.systemTemp.path).absolute.path,
+    );
+  });
+
+  test('44. /dir nonexistent path prints error', () async {
+    final result = await handle('/dir /this/does/not/exist/ever');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('not found'));
+    expect(dirSwitchArg, isNull);
+  });
+
+  // ── /ignore ────────────────────────────────────────────────────────────────
+
+  test('45. /ignore *.log adds pattern to session', () async {
+    expect(session.permissions.ignoredPatterns, isEmpty);
+
+    final result = await handle('/ignore *.log');
+    expect(result, isTrue);
+    expect(session.permissions.ignoredPatterns, contains('*.log'));
+  });
+
+  test('46. /ignore (no arg) prints usage', () async {
+    final result = await handle('/ignore');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(session.permissions.ignoredPatterns, isEmpty);
+  });
+
+  // ── /snapshot ──────────────────────────────────────────────────────────────
+
+  test(
+    '47. /snapshot saves session and prints ID and resume hint',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'proxima_snapshot_test_',
+      );
+      try {
+        final storage = SessionStorage(tempDir.path);
+
+        final result = await handle('/snapshot', sessionStorage: storage);
+        expect(result, isTrue);
+        final out = renderer.output;
+        expect(out, contains(session.id));
+        expect(out.toLowerCase(), anyOf(contains('resume'), contains('snapshot')));
+      } finally {
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  // ── /help contains new commands ────────────────────────────────────────────
+
+  test('48. /help lists all 7 new commands', () async {
+    await handle('/help');
+    final out = renderer.output;
+    expect(out, contains('/tools'));
+    expect(out, contains('/debug'));
+    expect(out, contains('/deny'));
+    expect(out, contains('/permissions'));
+    expect(out, contains('/dir'));
+    expect(out, contains('/ignore'));
+    expect(out, contains('/snapshot'));
+  });
 }

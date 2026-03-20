@@ -6,6 +6,7 @@ import '../core/types.dart';
 import '../providers/ollama_provider.dart';
 import '../providers/provider_registry.dart';
 import '../tools/tool_registry.dart';
+import '../tools/file/delete_file_tool.dart';
 import '../tools/file/read_file_tool.dart';
 import '../tools/file/write_file_tool.dart';
 import '../tools/file/patch_file_tool.dart';
@@ -34,7 +35,7 @@ import 'slash_commands.dart';
 /// Main REPL loop integrating all layers.
 class ProximaRepl {
   ProximaConfig _config;
-  late final Renderer _renderer;
+  late Renderer _renderer;
   late final ToolRegistry _toolRegistry;
   late final PermissionGate _permissionGate;
   late final SessionStorage _sessionStorage;
@@ -143,6 +144,7 @@ class ProximaRepl {
     registry.register(ReadFileTool());
     registry.register(WriteFileTool());
     registry.register(PatchFileTool());
+    registry.register(DeleteFileTool());
     registry.register(ListFilesTool());
     registry.register(GlobTool());
     registry.register(SearchTool());
@@ -210,6 +212,11 @@ class ProximaRepl {
         ollamaModels: _ollamaModels,
         onModeSwitch: (mode) => _switchMode(mode),
         contextWindow: _contextWindow,
+        onDebugSwitch: (debug) => _switchDebug(debug),
+        debugState: _config.debug,
+        toolRegistry: _toolRegistry,
+        onDirSwitch: (dir) => _switchDir(dir),
+        sessionStorage: _sessionStorage,
       );
 
       if (wasCommand) continue;
@@ -266,6 +273,13 @@ class ProximaRepl {
         '/history',
         '/files',
         '/context',
+        '/tools',
+        '/debug',
+        '/deny',
+        '/permissions',
+        '/dir',
+        '/ignore',
+        '/snapshot',
       ];
       // Only show suggestions once at least one char after '/' is typed.
       if (buffer.length < 2) return [];
@@ -312,6 +326,19 @@ class ProximaRepl {
     _config = _config.copyWith(mode: mode);
     _permissionGate.mode = mode;
     _renderer.printSuccess('  Mode: ${mode.name}');
+  }
+
+  void _switchDebug(bool debug) {
+    _config = _config.copyWith(debug: debug);
+    _renderer = Renderer(debug: debug);
+    _renderer.printSuccess('  Debug: ${debug ? 'on' : 'off'}');
+  }
+
+  void _switchDir(String dir) {
+    _config = _config.copyWith(workingDir: dir);
+    _session = ProximaSession.create(_config);
+    _agentLoop = null;
+    _renderer.printSuccess('  Working dir: $dir');
   }
 
   String _promptString() {

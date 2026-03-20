@@ -10,6 +10,16 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `delete_file` tool (high_risk) — permanently deletes a file with automatic `.proxima_bak` backup; compatible with `/undo`; refuses directory deletion
+- `/tools` slash command — lists all registered tools with risk levels and descriptions
+- `/debug [on|off]` slash command — shows or toggles debug output (reasoning + token counts)
+- `/deny <tool>` slash command — blocks a tool for the current session; enforced in `PermissionGate` before risk-level checks
+- `/permissions` slash command — shows allowed tools, denied tools, and ignored patterns for the current session
+- `/dir <path>` slash command — switches working directory and resets the session
+- `/ignore <pattern>` slash command — excludes a glob pattern from context
+- `/snapshot` slash command — saves a session snapshot with resume instructions
+- `SessionPermissions` extended with `deniedTools: Set<String>` and `ignoredPatterns: List<String>`, persisted in session JSON
+- Tab completion extended to all 7 new slash commands
 - Six git tools: `git_status` (safe), `git_diff` (safe), `git_log` (safe), `git_add` (confirm), `git_commit` (confirm), `git_reset` (high_risk)
 - `git push --force` / `git push -f` blocked outright in `blocked_patterns.dart` (belt-and-suspenders)
 - `/model` now opens an interactive picker with arrow-key navigation, Enter to select, Escape to cancel; active model is highlighted

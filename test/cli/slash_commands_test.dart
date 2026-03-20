@@ -1,10 +1,18 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:proxima/cli/slash_commands.dart';
 import 'package:proxima/core/session.dart';
+import 'package:proxima/core/session_storage.dart';
 import 'package:proxima/core/config.dart';
 import 'package:proxima/core/types.dart';
 import 'package:proxima/renderer/renderer.dart';
+import 'package:proxima/tools/tool_registry.dart';
+import 'package:proxima/tools/file/read_file_tool.dart';
+import 'package:proxima/tools/file/write_file_tool.dart';
+import 'package:proxima/permissions/risk_classifier.dart';
+import 'package:proxima/permissions/audit_log.dart';
+import 'package:proxima/permissions/permission_gate.dart';
 
 /// A fake [Renderer] that captures printed output to a [StringBuffer]
 /// instead of writing to stdout.
@@ -48,6 +56,9 @@ void main() {
   late bool clearCalled;
   late String? modelSwitchArg;
   late bool exitCalled;
+  late SessionMode? modeSwitchArg;
+  late bool? debugSwitchArg;
+  late String? dirSwitchArg;
 
   setUp(() {
     renderer = FakeRenderer();
@@ -56,19 +67,35 @@ void main() {
     clearCalled = false;
     modelSwitchArg = null;
     exitCalled = false;
+    modeSwitchArg = null;
+    debugSwitchArg = null;
+    dirSwitchArg = null;
   });
 
   // ── helper ─────────────────────────────────────────────────────────────────
 
-  Future<bool> handle(String input, {List<String> ollamaModels = const []}) =>
-      handler.handle(
-        input,
-        session,
-        () => clearCalled = true,
-        (m) => modelSwitchArg = m,
-        () => exitCalled = true,
-        ollamaModels: ollamaModels,
-      );
+  Future<bool> handle(
+    String input, {
+    List<String> ollamaModels = const [],
+    int contextWindow = 128000,
+    ToolRegistry? toolRegistry,
+    bool debugState = false,
+    SessionStorage? sessionStorage,
+  }) => handler.handle(
+    input,
+    session,
+    () => clearCalled = true,
+    (m) => modelSwitchArg = m,
+    () => exitCalled = true,
+    ollamaModels: ollamaModels,
+    onModeSwitch: (m) => modeSwitchArg = m,
+    contextWindow: contextWindow,
+    onDebugSwitch: (d) => debugSwitchArg = d,
+    debugState: debugState,
+    toolRegistry: toolRegistry,
+    onDirSwitch: (d) => dirSwitchArg = d,
+    sessionStorage: sessionStorage,
+  );
 
   // ── /help ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +107,7 @@ void main() {
     expect(out, contains('/exit'));
     expect(out, contains('/clear'));
     expect(out, contains('/model'));
+    expect(out, contains('/mode'));
     expect(out, contains('/undo'));
     expect(out, contains('/allow'));
     expect(out, contains('/status'));
@@ -181,16 +209,19 @@ void main() {
   // ── /model ─────────────────────────────────────────────────────────────────
 
   test(
-    '9. /model (no arg) prints model list including anthropic models',
+    '9. /model (no arg) falls back to plain list in non-TTY and returns true',
     () async {
+      // The interactive picker requires a real TTY (stdout.hasTerminal == true).
+      // In the test runner stdout is not a TTY, so the plain-list fallback is
+      // used instead.  The picker itself is tested manually.
       final result = await handle(
         '/model',
-        ollamaModels: [], // no ollama models — avoids live fetch
+        ollamaModels: [], // no ollama models — avoids live network fetch
       );
       expect(result, isTrue);
       final out = renderer.output;
+      // The non-TTY fallback still prints the anthropic model names.
       expect(out, contains('anthropic'));
-      // At least one of the known model IDs should appear.
       expect(
         SlashCommandHandler.anthropicModels.any((m) => out.contains(m)),
         isTrue,
@@ -230,9 +261,7 @@ void main() {
       await handle('/status');
       final out = renderer.output;
       expect(out, contains(session.model));
-      // The working directory is shown in the REPL header, not /status, but the
-      // session fields that are printed include model and id.
-      expect(out, contains(session.model));
+      expect(out, contains(session.workingDir));
     },
   );
 
@@ -314,6 +343,45 @@ void main() {
     expect(session.permissions.allowedTools, isEmpty);
   });
 
+  // ── /mode ──────────────────────────────────────────────────────────────────
+
+  test('26. /mode (no arg) prints current mode', () async {
+    final result = await handle('/mode');
+    expect(result, isTrue);
+    expect(renderer.output, contains('confirm'));
+  });
+
+  test('27. /mode safe calls onModeSwitch with SessionMode.safe', () async {
+    final result = await handle('/mode safe');
+    expect(result, isTrue);
+    expect(modeSwitchArg, SessionMode.safe);
+  });
+
+  test(
+    '28. /mode confirm calls onModeSwitch with SessionMode.confirm',
+    () async {
+      final result = await handle('/mode confirm');
+      expect(result, isTrue);
+      expect(modeSwitchArg, SessionMode.confirm);
+    },
+  );
+
+  test('29. /mode auto calls onModeSwitch with SessionMode.auto', () async {
+    final result = await handle('/mode auto');
+    expect(result, isTrue);
+    expect(modeSwitchArg, SessionMode.auto);
+  });
+
+  test('30. /mode foo prints error message', () async {
+    final result = await handle('/mode foo');
+    expect(result, isTrue);
+    expect(
+      renderer.output,
+      contains('Unknown mode: foo. Use safe, confirm, or auto.'),
+    );
+    expect(modeSwitchArg, isNull);
+  });
+
   // ── unknown / non-command inputs ───────────────────────────────────────────
 
   test(
@@ -357,4 +425,394 @@ void main() {
       );
     },
   );
+
+  // ── /files ─────────────────────────────────────────────────────────────────
+
+  test(
+    '31. /files with no modified files prints "No files accessed"',
+    () async {
+      final result = await handle('/files');
+      expect(result, isTrue);
+      expect(renderer.output, contains('No files accessed this session.'));
+    },
+  );
+
+  test('32. /files with modified files in session prints file paths', () async {
+    session.addTaskRecord(
+      TaskRecord(
+        toolName: 'write_file',
+        args: {'path': 'lib/foo.dart'},
+        timestamp: DateTime.now(),
+        success: true,
+      ),
+    );
+    session.addTaskRecord(
+      TaskRecord(
+        toolName: 'patch_file',
+        args: {'path': 'lib/bar.dart'},
+        timestamp: DateTime.now(),
+        success: true,
+      ),
+    );
+
+    final result = await handle('/files');
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('lib/foo.dart'));
+    expect(out, contains('lib/bar.dart'));
+    expect(out, contains('modified'));
+  });
+
+  // ── /context ───────────────────────────────────────────────────────────────
+
+  test('33. /context prints token budget with percentage labels', () async {
+    final result = await handle('/context', contextWindow: 128000);
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('system prompt'));
+    expect(out, contains('3%'));
+    expect(out, contains('35%'));
+  });
+
+  test(
+    '34. /context output contains "system prompt" and percentage values',
+    () async {
+      final result = await handle('/context', contextWindow: 100000);
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains('system prompt'));
+      expect(out, contains('project index'));
+      expect(out, contains('active files'));
+      expect(out, contains('history'));
+      expect(out, contains('tool results'));
+      expect(out, contains('output headroom'));
+      expect(out, contains('safety margin'));
+      // Token counts should be present (100k * 3% = 3000).
+      expect(out, contains('3,000'));
+    },
+  );
+
+  // ── /tools ─────────────────────────────────────────────────────────────────
+
+  test('35. /tools with registry prints tool names and risk levels', () async {
+    final registry = ToolRegistry();
+    registry.register(ReadFileTool());
+    registry.register(WriteFileTool());
+
+    final result = await handle('/tools', toolRegistry: registry);
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('read_file'));
+    expect(out, contains('write_file'));
+    expect(out, contains('safe'));
+    expect(out, contains('confirm'));
+  });
+
+  test('36. /tools with null registry prints graceful fallback', () async {
+    final result = await handle('/tools');
+    expect(result, isTrue);
+    expect(renderer.output, contains('no registry available'));
+  });
+
+  // ── /debug ─────────────────────────────────────────────────────────────────
+
+  test('37. /debug on calls onDebugSwitch with true', () async {
+    final result = await handle('/debug on');
+    expect(result, isTrue);
+    expect(debugSwitchArg, isTrue);
+  });
+
+  test('38. /debug off calls onDebugSwitch with false', () async {
+    final result = await handle('/debug off');
+    expect(result, isTrue);
+    expect(debugSwitchArg, isFalse);
+  });
+
+  test('39. /debug (no arg) prints current state', () async {
+    final result = await handle('/debug', debugState: true);
+    expect(result, isTrue);
+    expect(renderer.output, contains('on'));
+    expect(debugSwitchArg, isNull);
+  });
+
+  // ── /deny ──────────────────────────────────────────────────────────────────
+
+  test('40. /deny read_file adds to session.permissions.deniedTools', () async {
+    expect(session.permissions.deniedTools, isEmpty);
+
+    final result = await handle('/deny read_file');
+    expect(result, isTrue);
+    expect(session.permissions.deniedTools, contains('read_file'));
+  });
+
+  test('41. /deny (no arg) prints usage', () async {
+    final result = await handle('/deny');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(session.permissions.deniedTools, isEmpty);
+  });
+
+  // ── /permissions ───────────────────────────────────────────────────────────
+
+  test(
+    '42. /permissions prints allowed, denied, and ignored sections',
+    () async {
+      session.permissions = session.permissions
+          .withAllowedTool('write_file')
+          .withDeniedTool('run_command')
+          .withIgnoredPattern('*.log');
+
+      final result = await handle('/permissions');
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains('allowed tools'));
+      expect(out, contains('write_file'));
+      expect(out, contains('denied tools'));
+      expect(out, contains('run_command'));
+      expect(out, contains('ignored patterns'));
+      expect(out, contains('*.log'));
+    },
+  );
+
+  // ── /dir ───────────────────────────────────────────────────────────────────
+
+  test('43. /dir <valid path> calls onDirSwitch with resolved path', () async {
+    final result = await handle('/dir ${Directory.systemTemp.path}');
+    expect(result, isTrue);
+    expect(dirSwitchArg, isNotNull);
+    expect(dirSwitchArg, p.canonicalize(Directory.systemTemp.path));
+  });
+
+  test('44. /dir nonexistent path prints error', () async {
+    final result = await handle('/dir /this/does/not/exist/ever');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('not found'));
+    expect(dirSwitchArg, isNull);
+  });
+
+  // ── /ignore ────────────────────────────────────────────────────────────────
+
+  test('45. /ignore *.log adds pattern to session', () async {
+    expect(session.permissions.ignoredPatterns, isEmpty);
+
+    final result = await handle('/ignore *.log');
+    expect(result, isTrue);
+    expect(session.permissions.ignoredPatterns, contains('*.log'));
+  });
+
+  test('46. /ignore (no arg) prints usage', () async {
+    final result = await handle('/ignore');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(session.permissions.ignoredPatterns, isEmpty);
+  });
+
+  // ── /snapshot ──────────────────────────────────────────────────────────────
+
+  test('47. /snapshot saves session and prints ID and resume hint', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'proxima_snapshot_test_',
+    );
+    try {
+      final storage = SessionStorage(tempDir.path);
+
+      final result = await handle('/snapshot', sessionStorage: storage);
+      expect(result, isTrue);
+      final out = renderer.output;
+      expect(out, contains(session.id));
+      expect(
+        out.toLowerCase(),
+        anyOf(contains('resume'), contains('snapshot')),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  // ── /help contains new commands ────────────────────────────────────────────
+
+  test('48. /help lists all 7 new commands', () async {
+    await handle('/help');
+    final out = renderer.output;
+    expect(out, contains('/tools'));
+    expect(out, contains('/debug'));
+    expect(out, contains('/deny'));
+    expect(out, contains('/permissions'));
+    expect(out, contains('/dir'));
+    expect(out, contains('/ignore'));
+    expect(out, contains('/snapshot'));
+  });
+
+  // ── /undo after delete_file ────────────────────────────────────────────────
+
+  test('49. /undo after delete_file restores the deleted file', () async {
+    final tempDir = await Directory.systemTemp.createTemp('proxima_undo_del_');
+    try {
+      final target = File('${tempDir.path}/deleted.txt');
+      final backup = File('${tempDir.path}/deleted.txt.proxima_bak');
+      // Simulate what delete_file produces: file gone, backup present.
+      await backup.writeAsString('original content');
+
+      session.addTaskRecord(
+        TaskRecord(
+          toolName: 'delete_file',
+          args: {'path': target.path},
+          backupPath: backup.path,
+          timestamp: DateTime.now(),
+          success: true,
+        ),
+      );
+
+      final result = await handle('/undo');
+      expect(result, isTrue);
+      expect(await target.exists(), isTrue);
+      expect(await target.readAsString(), 'original content');
+      expect(await backup.exists(), isFalse);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  // ── /files includes deleted files ──────────────────────────────────────────
+
+  test('50. /files shows deleted files with (deleted) label', () async {
+    session.addTaskRecord(
+      TaskRecord(
+        toolName: 'delete_file',
+        args: {'path': 'lib/gone.dart'},
+        timestamp: DateTime.now(),
+        success: true,
+      ),
+    );
+
+    final result = await handle('/files');
+    expect(result, isTrue);
+    final out = renderer.output;
+    expect(out, contains('lib/gone.dart'));
+    expect(out, contains('deleted'));
+  });
+
+  // ── /dir no arg ────────────────────────────────────────────────────────────
+
+  test('51. /dir with no arg prints usage', () async {
+    final result = await handle('/dir');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(dirSwitchArg, isNull);
+  });
+
+  // ── /debug invalid arg ────────────────────────────────────────────────────
+
+  test('52. /debug with invalid arg prints error', () async {
+    final result = await handle('/debug yes');
+    expect(result, isTrue);
+    expect(renderer.output.toLowerCase(), contains('usage'));
+    expect(debugSwitchArg, isNull);
+  });
+
+  // ── /snapshot null storage ────────────────────────────────────────────────
+
+  test(
+    '53. /snapshot with null sessionStorage prints graceful fallback',
+    () async {
+      final result = await handle('/snapshot');
+      expect(result, isTrue);
+      expect(renderer.output, contains('not available'));
+    },
+  );
+
+  // ── /deny + /allow same tool — deny wins ──────────────────────────────────
+
+  test('54. /deny wins when same tool is also in allowlist', () async {
+    // Both allow and deny the same tool.
+    session.permissions = session.permissions
+        .withAllowedTool('read_file')
+        .withDeniedTool('read_file');
+
+    expect(session.permissions.allowedTools, contains('read_file'));
+    expect(session.permissions.deniedTools, contains('read_file'));
+    // The permission gate checks deny BEFORE allow — verified at the data level.
+    // The sets themselves are both populated; gate precedence is tested in
+    // permission_gate_test. Here we just confirm both sets hold the value.
+    expect(session.permissions.deniedTools, contains('read_file'));
+  });
+
+  // ── /ignore duplicate pattern ─────────────────────────────────────────────
+
+  test('55. /ignore same pattern twice adds it twice', () async {
+    await handle('/ignore *.log');
+    renderer.clearOutput();
+    await handle('/ignore *.log');
+
+    // ignoredPatterns is a list — duplicates are allowed (context manager
+    // handles deduplication at filter time).
+    expect(
+      session.permissions.ignoredPatterns.where((p) => p == '*.log').length,
+      2,
+    );
+  });
+
+  // ── /mode persists to session ──────────────────────────────────────────────
+
+  test(
+    '56. /mode updates session.mode so it is persisted on save/resume',
+    () async {
+      expect(session.mode, SessionMode.confirm); // default
+
+      // The handler updates session.mode directly.
+      await handle('/mode auto');
+
+      expect(session.mode, SessionMode.auto);
+    },
+  );
+
+  test('57. /mode safe updates session.mode to safe', () async {
+    await handle('/mode safe');
+    expect(session.mode, SessionMode.safe);
+  });
+
+  // ── /allow is honoured by PermissionGate ──────────────────────────────────
+
+  test('58. /allow tool is respected by PermissionGate.evaluate()', () async {
+    final tempDir = await Directory.systemTemp.createTemp('proxima_allow_');
+    try {
+      final registry = ToolRegistry();
+      registry.register(WriteFileTool());
+      final auditLog = AuditLog(tempDir.path);
+      final gate = PermissionGate(
+        classifier: RiskClassifier(registry),
+        auditLog: auditLog,
+        mode: SessionMode.confirm, // confirm mode — would normally prompt
+        allowedTools: {},
+        prompt: (_, _) async => false, // prompt always denies
+      );
+
+      // Allow write_file via /allow.
+      await handle('/allow write_file');
+      expect(session.permissions.allowedTools, contains('write_file'));
+
+      // The gate must honour the session allowlist even though the prompt denies.
+      final result = await gate.evaluate(
+        ToolCall(
+          tool: 'write_file',
+          args: {'path': 'foo.txt', 'content': 'x'},
+          reasoning: 'test',
+        ),
+        session.id,
+        allowedTools: session.permissions.allowedTools,
+      );
+      expect(result.decision, GateDecision.allow);
+
+      await auditLog.close();
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  // ── /status shows working directory ───────────────────────────────────────
+
+  test('59. /status shows working directory', () async {
+    await handle('/status');
+    expect(renderer.output, contains(session.workingDir));
+  });
 }

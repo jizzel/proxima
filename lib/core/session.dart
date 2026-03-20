@@ -41,34 +41,59 @@ class TaskRecord {
 class SessionPermissions {
   final Set<String> allowedTools;
   final Set<String> allowedCommands;
+  final Set<String> deniedTools;
+  final List<String> ignoredPatterns;
 
   const SessionPermissions({
     this.allowedTools = const {},
     this.allowedCommands = const {},
+    this.deniedTools = const {},
+    this.ignoredPatterns = const [],
   });
 
   SessionPermissions withAllowedTool(String tool) => SessionPermissions(
     allowedTools: {...allowedTools, tool},
     allowedCommands: allowedCommands,
+    deniedTools: deniedTools,
+    ignoredPatterns: ignoredPatterns,
   );
 
   SessionPermissions withAllowedCommand(String command) => SessionPermissions(
     allowedTools: allowedTools,
     allowedCommands: {...allowedCommands, command},
+    deniedTools: deniedTools,
+    ignoredPatterns: ignoredPatterns,
+  );
+
+  SessionPermissions withDeniedTool(String tool) => SessionPermissions(
+    allowedTools: allowedTools,
+    allowedCommands: allowedCommands,
+    deniedTools: {...deniedTools, tool},
+    ignoredPatterns: ignoredPatterns,
+  );
+
+  SessionPermissions withIgnoredPattern(String pattern) => SessionPermissions(
+    allowedTools: allowedTools,
+    allowedCommands: allowedCommands,
+    deniedTools: deniedTools,
+    ignoredPatterns: [...ignoredPatterns, pattern],
   );
 
   Map<String, dynamic> toJson() => {
     'allowed_tools': allowedTools.toList(),
     'allowed_commands': allowedCommands.toList(),
+    'denied_tools': deniedTools.toList(),
+    'ignored_patterns': ignoredPatterns,
   };
 
-  factory SessionPermissions.fromJson(Map<String, dynamic> json) =>
-      SessionPermissions(
-        allowedTools: Set<String>.from(json['allowed_tools'] as List? ?? []),
-        allowedCommands: Set<String>.from(
-          json['allowed_commands'] as List? ?? [],
-        ),
-      );
+  factory SessionPermissions.fromJson(
+    Map<String, dynamic> json,
+  ) => SessionPermissions(
+    allowedTools: Set<String>.from(json['allowed_tools'] as List? ?? []),
+    allowedCommands: Set<String>.from(json['allowed_commands'] as List? ?? []),
+    deniedTools: Set<String>.from(json['denied_tools'] as List? ?? []),
+    ignoredPatterns: List<String>.from(json['ignored_patterns'] as List? ?? []),
+  );
 }
 
 /// The stateful source of truth for a Proxima session.

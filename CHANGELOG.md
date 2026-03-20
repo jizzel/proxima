@@ -9,8 +9,44 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `delegate_to_subagent` tool (safe) — delegates to `code_analyzer`, `refactor`, or `test` specialist subagent; max 2 delegations per turn; subagents are tool-free and cannot nest
+- `SubagentRunner` — single-shot LLM call with specialist system prompt; never throws; subagent token usage folded into session cumulative total
+- `maxSubagentDelegations` config field (default: 2; override via `max_subagent_delegations` in config YAML)
+- `delete_file` tool (high_risk) — permanently deletes a file with automatic `.proxima_bak` backup; compatible with `/undo`; refuses directory deletion
+- `/tools` slash command — lists all registered tools with risk levels and descriptions
+- `/debug [on|off]` slash command — shows or toggles debug output (reasoning + token counts)
+- `/deny <tool>` slash command — blocks a tool for the current session; enforced in `PermissionGate` before risk-level checks
+- `/permissions` slash command — shows allowed tools, denied tools, and ignored patterns for the current session
+- `/dir <path>` slash command — switches working directory and resets the session
+- `/ignore <pattern>` slash command — excludes a glob pattern from context
+- `/snapshot` slash command — saves a session snapshot with resume instructions
+- `SessionPermissions` extended with `deniedTools: Set<String>` and `ignoredPatterns: List<String>`, persisted in session JSON
+- Tab completion extended to all 7 new slash commands
+- Six git tools: `git_status` (safe), `git_diff` (safe), `git_log` (safe), `git_add` (confirm), `git_commit` (confirm), `git_reset` (high_risk)
+- `git push --force` / `git push -f` blocked outright in `blocked_patterns.dart` (belt-and-suspenders)
+- `/model` now opens an interactive picker with arrow-key navigation, Enter to select, Escape to cancel; active model is highlighted
+- `/mode [safe|confirm|auto]` slash command to view or switch permission mode at runtime
+- `/files` slash command to list files read or written during the current session
+- `/context` slash command to display token budget breakdown for the active model
+- Streaming LLM responses — tokens now appear live in the terminal as the model generates them (Anthropic and Ollama); falls back to non-streaming for unsupported providers
+- Tab completion extended to `/mode`, `/files`, `/context`
+- 37 new tests covering slash commands, streaming, and fallback paths (108 total)
+
 ### Fixed
 
+- **Tool calls silently dropped for Ollama/ReAct models** — `ReActFallback.stream()` was a passthrough that forwarded raw `<tool_call>` JSON as plain text; `_streamResponse` assembled it into a `FinalResponse` and the agent loop treated the turn as complete without ever executing the tool or showing a permission prompt. Fixed by buffering the full streamed response, detecting tool-call blocks at the end, and signalling `hasToolUse: true` so `_streamResponse` falls back to `complete()` for correct extraction.
+- **Tool calls silently dropped for Anthropic streaming** — `stream()` ignored `content_block_start {type: tool_use}` SSE events; when the model chose a tool, the stream ended with an empty text buffer, yielding `FinalResponse('')`. Fixed by detecting `tool_use` content blocks in the stream and signalling `hasToolUse: true` on the done chunk, causing the same `complete()` fallback.
+- **Permission prompt silently denied all tool calls** — `PermissionPrompt` used `stdin.readLineSync()` while the terminal was in raw mode (set by `dart_console`'s `Console`); Enter sent `\r` instead of terminating a line, so every prompt returned empty string which defaulted to deny. Fixed by switching `_confirmPrompt` to `console.readKey()` (single-keypress, raw-mode compatible).
+- **`SubagentResult` did not flag `ErrorResponse`/`ToolCallResponse` as errors** — both were silently treated as successful results, passing error messages or raw tool-call JSON to the main agent as valid output. `ErrorResponse` now returns `isError: true` with the provider error; `ToolCallResponse` returns `isError: true` with a "hallucinated tool call" message.
+- **`/allow` had no effect** — `PermissionGate.evaluate()` only checked the constructor-injected allowlist, never `session.permissions.allowedTools` populated by `/allow`. Fixed by adding an `allowedTools` parameter to `evaluate()` and passing the session allowlist from the agent loop.
+- **`/mode` change not persisted on session save/resume** — `_switchMode()` updated `_config` and `_permissionGate.mode` but not `_session.mode`. Fixed.
+- **`/status` missing working directory** — added `Dir` row to `_printStatus()`.
+- **`/context` showed wrong context window** — defaulted to 128k regardless of active model; now resolved at `initialize()` and `_switchModel()` time via `_contextWindowForModel()`.
+- **`/model` tab panel showed only Anthropic models** while Enter opened a full picker including Ollama; fixed by gating the live Ollama fetch behind `stdout.hasTerminal` so non-TTY callers skip the network call.
+- **`/dir` path comparison failed on Windows CI** — test used `Directory.absolute.path` (preserves OS casing) while implementation uses `p.canonicalize()` (lowercases on Windows); fixed by using `p.canonicalize()` on both sides.
+- **Streaming spinner corrupted output** — `Spinner`'s `Timer.periodic` kept firing during token streaming, overwriting each output line with `\r⠇ Thinking...`; fixed by stopping the spinner on the first `onChunk` call.
+- Session permission mode now correctly restored when resuming a session with `--resume`
 - `/clear` no longer resets the session; it only clears the terminal display and reprints the header
 - `/history` help text corrected from "last N exchanges" to "last N messages"
 - `/history` preview now taken from first line only, preventing multiline messages from breaking the display

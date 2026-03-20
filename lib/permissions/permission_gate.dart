@@ -16,25 +16,47 @@ class PermissionResult {
 class PermissionGate {
   final RiskClassifier _classifier;
   final AuditLog _auditLog;
-  final SessionMode _mode;
+  SessionMode mode;
   final Set<String> _allowedTools;
   final PromptCallback _prompt;
 
   PermissionGate({
     required RiskClassifier classifier,
     required AuditLog auditLog,
-    required SessionMode mode,
+    required this.mode,
     required Set<String> allowedTools,
     required PromptCallback prompt,
   }) : _classifier = classifier,
        _auditLog = auditLog,
-       _mode = mode,
        _allowedTools = allowedTools,
        _prompt = prompt;
 
   /// Evaluate whether [toolCall] can execute.
   /// [sessionId] is used for audit logging.
-  Future<PermissionResult> evaluate(ToolCall toolCall, String sessionId) async {
+  /// [deniedTools] is the session-level deny list populated via /deny.
+  /// [allowedTools] is the session-level allow list populated via /allow.
+  Future<PermissionResult> evaluate(
+    ToolCall toolCall,
+    String sessionId, {
+    Set<String> deniedTools = const {},
+    Set<String> allowedTools = const {},
+  }) async {
+    // 0. Session deny list — belt-and-suspenders check for /deny.
+    if (deniedTools.contains(toolCall.tool)) {
+      await _auditLog.record(
+        sessionId: sessionId,
+        tool: toolCall.tool,
+        args: toolCall.args,
+        riskLevel: RiskLevel.blocked,
+        decision: 'denied_by_session',
+        reason: 'Tool denied via /deny',
+      );
+      return const PermissionResult(
+        GateDecision.deny,
+        reason: 'Tool denied for this session (/deny)',
+      );
+    }
+
     final riskLevel = _classifier.classify(toolCall);
 
     // 1. Blocked — hard reject, no prompt.
@@ -53,8 +75,10 @@ class PermissionGate {
       );
     }
 
-    // 2. Allow-list — tool was previously allowed this session.
-    if (_allowedTools.contains(toolCall.tool)) {
+    // 2. Allow-list — tool was previously allowed this session (either via
+    // constructor-injected set or the session-level /allow command).
+    if (_allowedTools.contains(toolCall.tool) ||
+        allowedTools.contains(toolCall.tool)) {
       await _auditLog.record(
         sessionId: sessionId,
         tool: toolCall.tool,
@@ -82,7 +106,7 @@ class PermissionGate {
     }
 
     // 4. Auto mode — execute confirm-level tools without prompt.
-    if (_mode == SessionMode.auto && riskLevel == RiskLevel.confirm) {
+    if (mode == SessionMode.auto && riskLevel == RiskLevel.confirm) {
       await _auditLog.record(
         sessionId: sessionId,
         tool: toolCall.tool,

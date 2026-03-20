@@ -43,9 +43,40 @@ class ReActFallback implements LLMProvider {
   }
 
   @override
-  Stream<LLMChunk> stream(CompletionRequest request) {
+  Stream<LLMChunk> stream(CompletionRequest request) async* {
     final augmented = _augmentRequest(request);
-    return _inner.stream(augmented);
+    final buffer = StringBuffer();
+    TokenUsage? finalUsage;
+
+    // Buffer the entire response before deciding what to yield.
+    // We can't stream text incrementally because we won't know until the end
+    // whether the response is a tool call (which must be re-fetched via
+    // complete() for extraction) or plain text.
+    await for (final chunk in _inner.stream(augmented)) {
+      if (chunk.isDone) {
+        finalUsage = chunk.finalUsage;
+        break;
+      }
+      buffer.write(chunk.text);
+    }
+
+    final text = buffer.toString();
+    final hasToolCall = ReActExtractor.extract(text) != null;
+
+    if (hasToolCall) {
+      // Signal the agent loop to re-fetch via complete() for tool extraction.
+      yield LLMChunk(
+        text: '',
+        isDone: true,
+        finalUsage: finalUsage,
+        hasToolUse: true,
+      );
+    } else {
+      // Plain text response — emit as streaming tokens so the renderer can
+      // display it incrementally (even though we buffered it internally).
+      yield LLMChunk(text: text);
+      yield LLMChunk(text: '', isDone: true, finalUsage: finalUsage);
+    }
   }
 
   @override

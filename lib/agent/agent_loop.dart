@@ -9,6 +9,7 @@ import '../permissions/permission_gate.dart';
 import '../context/context_builder.dart';
 import '../context/project_index.dart';
 import 'stuck_detector.dart';
+import 'subagent_runner.dart';
 
 /// Callbacks for the agent loop to communicate with the renderer.
 abstract class AgentCallbacks {
@@ -57,6 +58,7 @@ class AgentLoop {
     session.addMessage(Message(role: MessageRole.user, content: userInput));
 
     final toolLog = <ToolCall>[];
+    var delegationCount = 0;
     var schemaRetries = 0;
     var llmRetries = 0;
 
@@ -69,10 +71,15 @@ class AgentLoop {
       // Build context-aware request.
       final request = await _contextBuilder.build(session, projectIndex);
 
-      // Call the LLM.
+      // Call the LLM (streaming when supported, with complete() fallback).
       LLMResponse response;
+      bool didStream = false;
       try {
-        response = await _provider.complete(request);
+        if (_provider.capabilities.streaming) {
+          (response, didStream) = await _streamResponse(request, callbacks);
+        } else {
+          response = await _provider.complete(request);
+        }
         llmRetries = 0;
       } catch (e) {
         if (llmRetries < _config.maxRetriesLlm) {
@@ -95,7 +102,9 @@ class AgentLoop {
         session.addMessage(
           Message(role: MessageRole.assistant, content: body.text),
         );
-        callbacks.onFinalResponse(body.text);
+        // When streaming, tokens are already on screen — pass empty string so
+        // the renderer only emits the closing separator, not the full text again.
+        callbacks.onFinalResponse(didStream ? '' : body.text);
         session.status = TaskStatus.completed;
         return session;
       }
@@ -104,7 +113,8 @@ class AgentLoop {
         session.addMessage(
           Message(role: MessageRole.assistant, content: body.question),
         );
-        callbacks.onClarify(body.question);
+        // Same: tokens already on screen when streamed.
+        callbacks.onClarify(didStream ? '' : body.question);
         // Wait for next turn with user's answer.
         return session;
       }
@@ -152,8 +162,108 @@ class AgentLoop {
           toolLog.clear();
         }
 
+        // ── Subagent interception ────────────────────────────────────────────
+        if (toolCall.tool == 'delegate_to_subagent') {
+          // In dry-run mode, preview the delegation without calling the LLM.
+          if (_config.dryRun) {
+            final tool = _toolRegistry.lookup(toolCall.tool);
+            final preview = tool != null
+                ? '[DRY RUN] ${(await tool.dryRun(toolCall.args, session.workingDir)).preview}'
+                : '[DRY RUN] Would delegate to ${toolCall.args['agent']}';
+            session.addMessage(
+              Message(
+                role: MessageRole.assistant,
+                content: toolCall.reasoning,
+                toolName: toolCall.tool,
+                toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+                toolInput: toolCall.args,
+              ),
+            );
+            session.addMessage(
+              Message(
+                role: MessageRole.tool,
+                content: preview,
+                toolName: toolCall.tool,
+                toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+              ),
+            );
+            callbacks.onToolResult(toolCall.tool, preview, false);
+            session.addTaskRecord(
+              TaskRecord(
+                toolName: toolCall.tool,
+                args: toolCall.args,
+                timestamp: DateTime.now(),
+                success: true,
+              ),
+            );
+            continue;
+          }
+
+          String subagentResult;
+          bool delegationFailed;
+
+          if (delegationCount >= _config.maxSubagentDelegations) {
+            subagentResult =
+                'Error: max subagent delegations '
+                '(${_config.maxSubagentDelegations}) reached this turn.';
+            delegationFailed = true;
+          } else {
+            delegationCount++;
+            final runner = SubagentRunner(provider: _provider);
+            final result = await runner.run(
+              agentTypeStr: toolCall.args['agent'] as String? ?? '',
+              task: toolCall.args['task'] as String? ?? '',
+              context: toolCall.args['context'] as String? ?? '',
+              model: session.model,
+            );
+            session.recordUsage(result.usage);
+            delegationFailed = result.isError;
+            subagentResult = result.isError
+                ? 'Subagent error: ${result.errorMessage}'
+                : result.output;
+          }
+
+          session.addMessage(
+            Message(
+              role: MessageRole.assistant,
+              content: toolCall.reasoning,
+              toolName: toolCall.tool,
+              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+              toolInput: toolCall.args,
+            ),
+          );
+          session.addMessage(
+            Message(
+              role: MessageRole.tool,
+              content: subagentResult,
+              toolName: toolCall.tool,
+              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+            ),
+          );
+          callbacks.onToolResult(
+            toolCall.tool,
+            subagentResult,
+            delegationFailed,
+          );
+          session.addTaskRecord(
+            TaskRecord(
+              toolName: toolCall.tool,
+              args: toolCall.args,
+              timestamp: DateTime.now(),
+              success: !delegationFailed,
+            ),
+          );
+          continue;
+        }
+        // ── end subagent interception ────────────────────────────────────────
+
         // Permission gate.
-        final permission = await _permissionGate.evaluate(toolCall, session.id);
+        final permission = await _permissionGate.evaluate(
+          toolCall,
+          session.id,
+          deniedTools: session.permissions.deniedTools,
+          allowedTools: session.permissions.allowedTools,
+        );
 
         if (permission.decision == GateDecision.deny) {
           final denyMessage = 'Tool call denied: ${permission.reason}';
@@ -284,5 +394,65 @@ class AgentLoop {
     callbacks.onError('Max iterations (${_config.maxIterations}) reached.');
     session.status = TaskStatus.failed;
     return session;
+  }
+
+  /// Attempt a streaming LLM call, collecting chunks and forwarding text to
+  /// [callbacks.onChunk]. Returns the assembled [LLMResponse] and a flag
+  /// indicating whether streaming actually occurred.
+  ///
+  /// Falls back to [_provider.complete] if the stream throws, logging a debug
+  /// warning via [callbacks.onError].
+  Future<(LLMResponse, bool)> _streamResponse(
+    CompletionRequest request,
+    AgentCallbacks callbacks,
+  ) async {
+    final buffer = StringBuffer();
+    TokenUsage? finalUsage;
+    bool firstChunk = true;
+
+    try {
+      bool toolUseDetected = false;
+
+      await for (final chunk in _provider.stream(request)) {
+        if (chunk.isDone) {
+          finalUsage = chunk.finalUsage;
+          toolUseDetected = chunk.hasToolUse;
+          break;
+        }
+        if (chunk.text.isNotEmpty) {
+          if (firstChunk) {
+            // Spinner must be hidden before the first token appears.
+            callbacks.onChunk('\n');
+            firstChunk = false;
+          }
+          callbacks.onChunk(chunk.text);
+          buffer.write(chunk.text);
+        }
+      }
+
+      // When the model made a tool call, the stream only carried metadata —
+      // fall back to complete() which parses the full tool_use block.
+      if (toolUseDetected) {
+        final response = await _provider.complete(request);
+        return (response, false);
+      }
+
+      final usage = finalUsage ?? TokenUsage.zero;
+      final assembledText = buffer.toString();
+
+      // Streaming was used for a final/clarify text response.
+      final response = LLMResponse(
+        body: FinalResponse(assembledText),
+        usage: usage,
+        rawText: assembledText,
+      );
+
+      return (response, true);
+    } catch (e) {
+      // Streaming failed — fall back to complete() and log a debug warning.
+      callbacks.onError('[debug] Streaming failed, falling back: $e');
+      final response = await _provider.complete(request);
+      return (response, false);
+    }
   }
 }

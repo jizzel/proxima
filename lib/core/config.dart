@@ -14,6 +14,7 @@ class ProximaConfig {
   final int maxRetriesTool;
   final int maxRetriesLlm;
   final int maxRetriesSchema;
+  final int maxSubagentDelegations;
   final String? anthropicApiKey;
   final String? ollamaBaseUrl;
   final Map<String, dynamic> raw;
@@ -28,6 +29,7 @@ class ProximaConfig {
     required this.maxRetriesTool,
     required this.maxRetriesLlm,
     required this.maxRetriesSchema,
+    this.maxSubagentDelegations = 2,
     this.anthropicApiKey,
     this.ollamaBaseUrl,
     this.raw = const {},
@@ -43,6 +45,7 @@ class ProximaConfig {
     maxRetriesTool: 3,
     maxRetriesLlm: 2,
     maxRetriesSchema: 2,
+    maxSubagentDelegations: 2,
     anthropicApiKey: Platform.environment['ANTHROPIC_API_KEY'],
     ollamaBaseUrl:
         Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
@@ -104,6 +107,8 @@ class ProximaConfig {
       maxRetriesTool: yaml['max_retries_tool'] as int? ?? maxRetriesTool,
       maxRetriesLlm: yaml['max_retries_llm'] as int? ?? maxRetriesLlm,
       maxRetriesSchema: yaml['max_retries_schema'] as int? ?? maxRetriesSchema,
+      maxSubagentDelegations:
+          yaml['max_subagent_delegations'] as int? ?? maxSubagentDelegations,
       anthropicApiKey: yaml['anthropic_api_key'] as String? ?? anthropicApiKey,
       ollamaBaseUrl: yaml['ollama_base_url'] as String? ?? ollamaBaseUrl,
       raw: Map<String, dynamic>.from(yaml.value),
@@ -129,6 +134,7 @@ class ProximaConfig {
     maxRetriesTool: maxRetriesTool,
     maxRetriesLlm: maxRetriesLlm,
     maxRetriesSchema: maxRetriesSchema,
+    maxSubagentDelegations: maxSubagentDelegations,
     anthropicApiKey: anthropicApiKey ?? this.anthropicApiKey,
     ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
     raw: raw,

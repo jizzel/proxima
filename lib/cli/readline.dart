@@ -217,6 +217,9 @@ class ReadLine {
           buffer = candidates[0];
           cursorPos = buffer.length;
           lastCandidates = [];
+          // Tab counts as typing — leave history mode.
+          _historyIndex = -1;
+          savedBuffer = null;
         }
         continue;
       }
@@ -231,6 +234,9 @@ class ReadLine {
                   buffer.substring(0, cursorPos - 1) +
                   buffer.substring(cursorPos);
               cursorPos--;
+              // Any edit exits history-scroll mode so ↑/↓ works from here.
+              _historyIndex = -1;
+              savedBuffer = null;
             }
           case ControlCharacter.delete:
           case ControlCharacter.ctrlD:
@@ -238,12 +244,18 @@ class ReadLine {
               buffer =
                   buffer.substring(0, cursorPos) +
                   buffer.substring(cursorPos + 1);
+              _historyIndex = -1;
+              savedBuffer = null;
             }
           case ControlCharacter.ctrlU:
             buffer = buffer.substring(cursorPos);
             cursorPos = 0;
+            _historyIndex = -1;
+            savedBuffer = null;
           case ControlCharacter.ctrlK:
             buffer = buffer.substring(0, cursorPos);
+            _historyIndex = -1;
+            savedBuffer = null;
           case ControlCharacter.ctrlA:
           case ControlCharacter.home:
             cursorPos = 0;
@@ -287,6 +299,9 @@ class ReadLine {
       }
 
       // ── Printable character ─────────────────────────────────────────────────
+      // Any typed character exits history-scroll mode.
+      _historyIndex = -1;
+      savedBuffer = null;
       buffer =
           buffer.substring(0, cursorPos) +
           key.char +

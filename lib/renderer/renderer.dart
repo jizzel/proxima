@@ -106,6 +106,9 @@ class Renderer implements AgentCallbacks {
 
   @override
   void onChunk(String text) {
+    // Stop the spinner before the first token lands so its periodic timer
+    // cannot overwrite streaming output mid-line.
+    if (_spinner != null) hideSpinner();
     stdout.write(text);
   }
 

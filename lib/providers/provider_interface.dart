@@ -21,7 +21,16 @@ class LLMChunk {
   final bool isDone;
   final TokenUsage? finalUsage;
 
-  const LLMChunk({required this.text, this.isDone = false, this.finalUsage});
+  /// True when the done chunk signals the model made a tool call.
+  /// The caller should re-fetch via complete() to get the parsed tool call.
+  final bool hasToolUse;
+
+  const LLMChunk({
+    required this.text,
+    this.isDone = false,
+    this.finalUsage,
+    this.hasToolUse = false,
+  });
 }
 
 /// A tool definition sent to the LLM.

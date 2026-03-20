@@ -12,7 +12,7 @@ import 'package:proxima/context/context_builder.dart';
 import 'package:proxima/agent/agent_loop.dart';
 import 'dart:io';
 
-// Mock provider that returns predetermined responses.
+// Mock provider that returns predetermined responses (non-streaming).
 class MockProvider implements LLMProvider {
   final List<LLMResponse> responses;
   int _callCount = 0;
@@ -52,6 +52,83 @@ class MockProvider implements LLMProvider {
   Future<List<String>> listModels() async => [];
 }
 
+// Mock streaming provider that emits chunks for a final response.
+class MockStreamingProvider implements LLMProvider {
+  final List<LLMChunk> chunks;
+
+  /// If set, complete() is called as fallback and tracked here.
+  bool completeCalled = false;
+
+  MockStreamingProvider({required this.chunks});
+
+  @override
+  String get name => 'mock-streaming';
+
+  @override
+  String get model => 'mock/streaming-model';
+
+  @override
+  ProviderCapabilities get capabilities => const ProviderCapabilities(
+    nativeToolUse: true,
+    streaming: true,
+    contextWindow: 10000,
+  );
+
+  @override
+  Future<LLMResponse> complete(CompletionRequest request) async {
+    completeCalled = true;
+    return LLMResponse(
+      body: FinalResponse('fallback complete response'),
+      usage: const TokenUsage(inputTokens: 5, outputTokens: 5, totalTokens: 10),
+    );
+  }
+
+  @override
+  Stream<LLMChunk> stream(CompletionRequest request) async* {
+    for (final chunk in chunks) {
+      yield chunk;
+    }
+  }
+
+  @override
+  Future<List<String>> listModels() async => [];
+}
+
+// Streaming provider whose stream() always throws to exercise fallback.
+class MockStreamingFailProvider implements LLMProvider {
+  bool completeCalled = false;
+
+  @override
+  String get name => 'mock-streaming-fail';
+
+  @override
+  String get model => 'mock/streaming-fail-model';
+
+  @override
+  ProviderCapabilities get capabilities => const ProviderCapabilities(
+    nativeToolUse: true,
+    streaming: true,
+    contextWindow: 10000,
+  );
+
+  @override
+  Future<LLMResponse> complete(CompletionRequest request) async {
+    completeCalled = true;
+    return LLMResponse(
+      body: FinalResponse('fallback response after stream error'),
+      usage: const TokenUsage(inputTokens: 5, outputTokens: 5, totalTokens: 10),
+    );
+  }
+
+  @override
+  Stream<LLMChunk> stream(CompletionRequest request) async* {
+    throw LLMError(LLMErrorKind.network, 'simulated stream failure');
+  }
+
+  @override
+  Future<List<String>> listModels() async => [];
+}
+
 // Mock callbacks that capture events.
 class MockCallbacks implements AgentCallbacks {
   final List<String> events = [];
@@ -76,7 +153,7 @@ class MockCallbacks implements AgentCallbacks {
   }
 
   @override
-  void onChunk(String text) {}
+  void onChunk(String text) => events.add('chunk: $text');
 }
 
 void main() {
@@ -211,5 +288,116 @@ void main() {
 
     expect(result.status, TaskStatus.failed);
     expect(callbacks.events.any((e) => e.contains('error')), isTrue);
+  });
+
+  test('streams response when provider supports streaming', () async {
+    // Three text chunks followed by a done chunk with usage.
+    final provider = MockStreamingProvider(
+      chunks: [
+        const LLMChunk(text: 'Hello'),
+        const LLMChunk(text: ', world'),
+        const LLMChunk(text: '!'),
+        LLMChunk(
+          text: '',
+          isDone: true,
+          finalUsage: const TokenUsage(
+            inputTokens: 10,
+            outputTokens: 3,
+            totalTokens: 13,
+          ),
+        ),
+      ],
+    );
+
+    final callbacks = MockCallbacks();
+    final session = ProximaSession.create(config);
+    final result = await makeLoop(
+      provider,
+    ).runTurn(session, 'say hello', callbacks);
+
+    expect(result.status, TaskStatus.completed);
+
+    // All three text chunks should have been forwarded via onChunk.
+    expect(callbacks.events.any((e) => e == 'chunk: Hello'), isTrue);
+    expect(callbacks.events.any((e) => e == 'chunk: , world'), isTrue);
+    expect(callbacks.events.any((e) => e == 'chunk: !'), isTrue);
+
+    // Session history must contain the fully assembled text.
+    final assistantMessages = result.history
+        .where((m) => m.role == MessageRole.assistant)
+        .toList();
+    expect(assistantMessages.isNotEmpty, isTrue);
+    expect(assistantMessages.last.content, 'Hello, world!');
+
+    // Token usage from the final chunk must be recorded.
+    expect(result.cumulativeUsage.totalTokens, 13);
+
+    // complete() must NOT have been called — streaming was used.
+    expect(provider.completeCalled, isFalse);
+  });
+
+  test('falls back to complete() when streaming not supported', () async {
+    // MockProvider has streaming: false, so complete() must be used.
+    final provider = MockProvider([
+      LLMResponse(
+        body: FinalResponse('non-streaming response'),
+        usage: const TokenUsage(
+          inputTokens: 4,
+          outputTokens: 4,
+          totalTokens: 8,
+        ),
+      ),
+    ]);
+
+    final callbacks = MockCallbacks();
+    final session = ProximaSession.create(config);
+    final result = await makeLoop(
+      provider,
+    ).runTurn(session, 'say something', callbacks);
+
+    expect(result.status, TaskStatus.completed);
+
+    // No chunk events — complete() was used.
+    expect(callbacks.events.any((e) => e.startsWith('chunk:')), isFalse);
+
+    // onFinalResponse was called with the full text (not empty).
+    expect(
+      callbacks.events.any((e) => e == 'final: non-streaming response'),
+      isTrue,
+    );
+
+    expect(result.cumulativeUsage.totalTokens, 8);
+  });
+
+  test('falls back to complete() when stream() throws', () async {
+    final provider = MockStreamingFailProvider();
+    final callbacks = MockCallbacks();
+    final session = ProximaSession.create(config);
+    final result = await makeLoop(
+      provider,
+    ).runTurn(session, 'say something', callbacks);
+
+    expect(result.status, TaskStatus.completed);
+
+    // complete() must have been invoked as fallback.
+    expect(provider.completeCalled, isTrue);
+
+    // A debug warning should have been emitted.
+    expect(
+      callbacks.events.any(
+        (e) => e.contains('Streaming failed') || e.contains('debug'),
+      ),
+      isTrue,
+    );
+
+    // The fallback response text should appear in session history.
+    final assistantMessages = result.history
+        .where((m) => m.role == MessageRole.assistant)
+        .toList();
+    expect(assistantMessages.isNotEmpty, isTrue);
+    expect(
+      assistantMessages.last.content,
+      'fallback response after stream error',
+    );
   });
 }

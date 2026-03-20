@@ -6,6 +6,7 @@ import '../core/types.dart';
 import '../providers/ollama_provider.dart';
 import '../providers/provider_registry.dart';
 import '../tools/tool_registry.dart';
+import '../tools/file/delete_file_tool.dart';
 import '../tools/file/read_file_tool.dart';
 import '../tools/file/write_file_tool.dart';
 import '../tools/file/patch_file_tool.dart';
@@ -14,6 +15,13 @@ import '../tools/file/glob_tool.dart';
 import '../tools/search/search_tool.dart';
 import '../tools/shell/run_command_tool.dart';
 import '../tools/shell/run_tests_tool.dart';
+import '../tools/git/git_status_tool.dart';
+import '../tools/git/git_diff_tool.dart';
+import '../tools/git/git_log_tool.dart';
+import '../tools/git/git_add_tool.dart';
+import '../tools/git/git_commit_tool.dart';
+import '../tools/git/git_reset_tool.dart';
+import '../tools/agent/delegate_tool.dart';
 import '../permissions/risk_classifier.dart';
 import '../permissions/audit_log.dart';
 import '../permissions/permission_gate.dart';
@@ -27,8 +35,8 @@ import 'slash_commands.dart';
 
 /// Main REPL loop integrating all layers.
 class ProximaRepl {
-  final ProximaConfig _config;
-  late final Renderer _renderer;
+  ProximaConfig _config;
+  late Renderer _renderer;
   late final ToolRegistry _toolRegistry;
   late final PermissionGate _permissionGate;
   late final SessionStorage _sessionStorage;
@@ -41,6 +49,10 @@ class ProximaRepl {
   /// The model currently in use (may differ from _config after /model switch).
   late String _activeModel;
 
+  /// Cached context window size. Resolved from the active model at
+  /// initialize() time so /context shows the correct value immediately.
+  int _contextWindow = 128000;
+
   bool _running = true;
   late final ReadLine _readline;
 
@@ -51,6 +63,7 @@ class ProximaRepl {
 
   Future<void> initialize({String? resumeSessionId}) async {
     _activeModel = _config.model;
+    _contextWindow = _contextWindowForModel(_activeModel);
     _readline = ReadLine.withUserHistory();
     _renderer = Renderer(debug: _config.debug);
     _toolRegistry = _buildToolRegistry();
@@ -77,6 +90,13 @@ class ProximaRepl {
           ProximaSession.create(_config);
     } else {
       _session = ProximaSession.create(_config);
+    }
+
+    // Sync permission gate mode to the resumed session's mode.
+    // A session may have had its mode changed at runtime via /mode; the saved
+    // mode takes precedence over the config default.
+    if (_session.mode != _config.mode) {
+      _permissionGate.mode = _session.mode;
     }
 
     // Pre-fetch Ollama model list in background (non-fatal).
@@ -106,9 +126,11 @@ class ProximaRepl {
     );
 
     final provider = providerRegistry.create(_activeModel);
+    // Update with the exact value from the provider (may differ from estimate).
+    _contextWindow = provider.capabilities.contextWindow;
     final contextBuilder = ContextBuilder(
       _toolRegistry,
-      contextWindow: provider.capabilities.contextWindow,
+      contextWindow: _contextWindow,
     );
 
     _agentLoop = AgentLoop(
@@ -126,11 +148,23 @@ class ProximaRepl {
     registry.register(ReadFileTool());
     registry.register(WriteFileTool());
     registry.register(PatchFileTool());
+    registry.register(DeleteFileTool());
     registry.register(ListFilesTool());
     registry.register(GlobTool());
     registry.register(SearchTool());
     registry.register(RunCommandTool());
     registry.register(RunTestsTool());
+    // Git tools — safe reads
+    registry.register(GitStatusTool());
+    registry.register(GitDiffTool());
+    registry.register(GitLogTool());
+    // Git tools — writes (confirm)
+    registry.register(GitAddTool());
+    registry.register(GitCommitTool());
+    // Git tools — high risk
+    registry.register(GitResetTool());
+    // Agent tools
+    registry.register(DelegateToSubagentTool());
     return registry;
   }
 
@@ -182,6 +216,13 @@ class ProximaRepl {
         (model) => _switchModel(model),
         () => _running = false,
         ollamaModels: _ollamaModels,
+        onModeSwitch: (mode) => _switchMode(mode),
+        contextWindow: _contextWindow,
+        onDebugSwitch: (debug) => _switchDebug(debug),
+        debugState: _config.debug,
+        toolRegistry: _toolRegistry,
+        onDirSwitch: (dir) => _switchDir(dir),
+        sessionStorage: _sessionStorage,
       );
 
       if (wasCommand) continue;
@@ -231,10 +272,20 @@ class ProximaRepl {
         '/exit',
         '/clear',
         '/model',
+        '/mode',
         '/undo',
         '/allow',
         '/status',
         '/history',
+        '/files',
+        '/context',
+        '/tools',
+        '/debug',
+        '/deny',
+        '/permissions',
+        '/dir',
+        '/ignore',
+        '/snapshot',
       ];
       // Only show suggestions once at least one char after '/' is typed.
       if (buffer.length < 2) return [];
@@ -244,6 +295,11 @@ class ProximaRepl {
     // Complete model names after "/model ".
     if (buffer.startsWith('/model ')) {
       final partial = buffer.substring('/model '.length);
+      // Only offer completions when the user has started typing a partial name.
+      // When the buffer is exactly "/model " (no partial), pressing Enter opens
+      // the interactive picker which fetches a complete list — show nothing
+      // in the panel so as not to show an incomplete set.
+      if (partial.isEmpty) return [];
       final allModels = [
         for (final m in SlashCommandHandler.anthropicModels) 'anthropic/$m',
         for (final m in _ollamaModels) 'ollama/$m',
@@ -273,8 +329,39 @@ class ProximaRepl {
   void _switchModel(String model) {
     _activeModel = model;
     _agentLoop = null; // force re-creation with new provider on next call
+    _contextWindow = _contextWindowForModel(model);
+    // Carry forward the current mode so a prior /mode change is not lost.
     _session = ProximaSession.create(_config.copyWith(model: model));
     _printCurrentHeader();
+  }
+
+  /// Returns the known context window for [model] without creating a provider
+  /// (avoids requiring API key just to show /context output).
+  static int _contextWindowForModel(String model) {
+    if (model.startsWith('anthropic/')) return 200000;
+    if (model.startsWith('ollama/')) return 32768;
+    return 128000; // unknown provider — use conservative default
+  }
+
+  void _switchMode(SessionMode mode) {
+    _config = _config.copyWith(mode: mode);
+    _permissionGate.mode = mode;
+    // Keep session in sync so the mode is persisted on save/resume.
+    _session.mode = mode;
+    _renderer.printSuccess('  Mode: ${mode.name}');
+  }
+
+  void _switchDebug(bool debug) {
+    _config = _config.copyWith(debug: debug);
+    _renderer = Renderer(debug: debug);
+    _renderer.printSuccess('  Debug: ${debug ? 'on' : 'off'}');
+  }
+
+  void _switchDir(String dir) {
+    _config = _config.copyWith(workingDir: dir);
+    _session = ProximaSession.create(_config);
+    _agentLoop = null;
+    _renderer.printSuccess('  Working dir: $dir');
   }
 
   String _promptString() {

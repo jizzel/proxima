@@ -165,13 +165,16 @@ Switch models from inside the REPL:
 | Command | Description |
 |---|---|
 | `/help` | Show all commands |
-| `/model` | List available models |
-| `/model <provider>/<name>` | Switch to a different model |
-| `/clear` | Clear terminal display |
+| `/model` | Open interactive model picker (arrow keys + Enter) |
+| `/model <provider>/<name>` | Switch directly to a specific model |
+| `/mode [safe\|confirm\|auto]` | Show or change permission mode at runtime |
+| `/clear` | Clear terminal display (history preserved) |
 | `/undo` | Restore the last file changed |
 | `/allow <tool>` | Allow a tool for this session without prompting |
 | `/status` | Show session info (model, tokens, iterations) |
-| `/history` | Show conversation history |
+| `/history [--last N]` | Show conversation history (optionally last N messages) |
+| `/files` | Show files read or written this session |
+| `/context` | Show token budget breakdown |
 | `/exit` | Exit Proxima |
 
 ---
@@ -234,8 +237,14 @@ Same format. Project config takes precedence over user config.
 | `patch_file` | confirm | Search-and-replace in a file (auto-backup) |
 | `run_command` | confirm | Run a shell command |
 | `run_tests` | confirm | Run the project test suite (auto-detects framework) |
+| `git_status` | safe | Show working tree status |
+| `git_diff` | safe | Show unstaged or staged diff |
+| `git_log` | safe | Show recent commit history |
+| `git_add` | confirm | Stage a file for commit |
+| `git_commit` | confirm | Create a commit with a message |
+| `git_reset` | high_risk | Reset working tree to a ref (destructive) |
 
-Blocked commands (never executed regardless of mode): `rm -rf /`, `sudo`, `curl | sh`, path traversal, and other destructive patterns.
+Blocked commands (never executed regardless of mode): `rm -rf /`, `sudo`, `curl | sh`, `git push --force`, path traversal, and other destructive patterns.
 
 ---
 
@@ -352,7 +361,7 @@ The following items are planned for future releases as minor additions in v1:
 - **Additional cloud providers** — OpenAI, Gemini, Groq, Mistral (same `LLMProvider` interface, new adapters)
 - **Local providers** — LM Studio and llama.cpp in addition to Ollama
 - **`delete_file` tool** — high-risk level, requires typed CONFIRM
-- **`git` tools** — `git_status`, `git_diff`, `git_log`, `git_commit` (read-only by default; write operations are confirm-level)
+- **`git` tools** — ✅ shipped: `git_status`, `git_diff`, `git_log`, `git_add`, `git_commit`, `git_reset`
 - **Subagent support** — agent spawns child agents for parallel sub-tasks
 
 ### V1.3.0 — Intelligence and search

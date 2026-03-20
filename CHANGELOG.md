@@ -9,8 +9,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Six git tools: `git_status` (safe), `git_diff` (safe), `git_log` (safe), `git_add` (confirm), `git_commit` (confirm), `git_reset` (high_risk)
+- `git push --force` / `git push -f` blocked outright in `blocked_patterns.dart` (belt-and-suspenders)
+- `/model` now opens an interactive picker with arrow-key navigation, Enter to select, Escape to cancel; active model is highlighted
+- `/mode [safe|confirm|auto]` slash command to view or switch permission mode at runtime
+- `/files` slash command to list files read or written during the current session
+- `/context` slash command to display token budget breakdown for the active model
+- Streaming LLM responses — tokens now appear live in the terminal as the model generates them (Anthropic and Ollama); falls back to non-streaming for unsupported providers
+- Tab completion extended to `/mode`, `/files`, `/context`
+- 37 new tests covering slash commands, streaming, and fallback paths (108 total)
+
 ### Fixed
 
+- Session permission mode now correctly restored when resuming a session with `--resume`
 - `/clear` no longer resets the session; it only clears the terminal display and reprints the header
 - `/history` help text corrected from "last N exchanges" to "last N messages"
 - `/history` preview now taken from first line only, preventing multiline messages from breaking the display

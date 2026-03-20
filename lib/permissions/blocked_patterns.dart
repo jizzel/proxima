@@ -29,6 +29,11 @@ const List<String> blockedCommandPatterns = [
   // chmod/chown on system dirs
   r'chmod\s+.*\s+/',
   r'chown\s+.*\s+/',
+  // Git force-push (too destructive for automated use)
+  r'git\s+push\s+.*--force',
+  r'git\s+push\s+.*-f\b',
+  // Git reset to filesystem root (path traversal variant)
+  r'git\s+reset\s+--hard\s+/',
 ];
 
 /// Path patterns that are always blocked (absolute paths outside working dir).

@@ -14,6 +14,12 @@ import '../tools/file/glob_tool.dart';
 import '../tools/search/search_tool.dart';
 import '../tools/shell/run_command_tool.dart';
 import '../tools/shell/run_tests_tool.dart';
+import '../tools/git/git_status_tool.dart';
+import '../tools/git/git_diff_tool.dart';
+import '../tools/git/git_log_tool.dart';
+import '../tools/git/git_add_tool.dart';
+import '../tools/git/git_commit_tool.dart';
+import '../tools/git/git_reset_tool.dart';
 import '../permissions/risk_classifier.dart';
 import '../permissions/audit_log.dart';
 import '../permissions/permission_gate.dart';
@@ -142,6 +148,15 @@ class ProximaRepl {
     registry.register(SearchTool());
     registry.register(RunCommandTool());
     registry.register(RunTestsTool());
+    // Git tools — safe reads
+    registry.register(GitStatusTool());
+    registry.register(GitDiffTool());
+    registry.register(GitLogTool());
+    // Git tools — writes (confirm)
+    registry.register(GitAddTool());
+    registry.register(GitCommitTool());
+    // Git tools — high risk
+    registry.register(GitResetTool());
     return registry;
   }
 

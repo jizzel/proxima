@@ -214,6 +214,7 @@ mode: confirm          # confirm | safe | auto
 debug: false
 dry_run: false
 max_iterations: 10
+max_subagent_delegations: 2    # max delegate_to_subagent calls per turn
 anthropic_api_key: sk-ant-...   # or set via environment variable
 ollama_base_url: http://localhost:11434
 ```

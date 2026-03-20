@@ -164,12 +164,43 @@ class AgentLoop {
 
         // ── Subagent interception ────────────────────────────────────────────
         if (toolCall.tool == 'delegate_to_subagent') {
+          // In dry-run mode, preview the delegation without calling the LLM.
+          if (_config.dryRun) {
+            final tool = _toolRegistry.lookup(toolCall.tool);
+            final preview = tool != null
+                ? '[DRY RUN] ${(await tool.dryRun(toolCall.args, session.workingDir)).preview}'
+                : '[DRY RUN] Would delegate to ${toolCall.args['agent']}';
+            session.addMessage(Message(
+              role: MessageRole.assistant,
+              content: toolCall.reasoning,
+              toolName: toolCall.tool,
+              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+              toolInput: toolCall.args,
+            ));
+            session.addMessage(Message(
+              role: MessageRole.tool,
+              content: preview,
+              toolName: toolCall.tool,
+              toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
+            ));
+            callbacks.onToolResult(toolCall.tool, preview, false);
+            session.addTaskRecord(TaskRecord(
+              toolName: toolCall.tool,
+              args: toolCall.args,
+              timestamp: DateTime.now(),
+              success: true,
+            ));
+            continue;
+          }
+
           String subagentResult;
+          bool delegationFailed;
 
           if (delegationCount >= _config.maxSubagentDelegations) {
             subagentResult =
                 'Error: max subagent delegations '
                 '(${_config.maxSubagentDelegations}) reached this turn.';
+            delegationFailed = true;
           } else {
             delegationCount++;
             final runner = SubagentRunner(provider: _provider);
@@ -180,6 +211,7 @@ class AgentLoop {
               model: session.model,
             );
             session.recordUsage(result.usage);
+            delegationFailed = result.isError;
             subagentResult = result.isError
                 ? 'Subagent error: ${result.errorMessage}'
                 : result.output;
@@ -198,12 +230,16 @@ class AgentLoop {
             toolName: toolCall.tool,
             toolCallId: toolCall.callId ?? 'call_${session.iterationCount}',
           ));
-          callbacks.onToolResult(toolCall.tool, subagentResult, false);
+          callbacks.onToolResult(
+            toolCall.tool,
+            subagentResult,
+            delegationFailed,
+          );
           session.addTaskRecord(TaskRecord(
             toolName: toolCall.tool,
             args: toolCall.args,
             timestamp: DateTime.now(),
-            success: true,
+            success: !delegationFailed,
           ));
           continue;
         }

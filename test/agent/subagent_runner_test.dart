@@ -12,7 +12,8 @@ import 'package:proxima/permissions/audit_log.dart';
 import 'package:proxima/permissions/permission_gate.dart';
 import 'package:proxima/context/context_builder.dart';
 import 'package:proxima/agent/agent_loop.dart';
-import 'package:proxima/agent/subagent_runner.dart';
+import 'package:proxima/agent/subagent_runner.dart'
+    show SubagentRunner, CriticVerdict;
 import 'dart:io';
 
 // Provider that captures every CompletionRequest and returns preset responses.
@@ -111,6 +112,9 @@ class MockCallbacks implements AgentCallbacks {
 
   @override
   void onChunk(String text) => events.add('chunk: $text');
+  @override
+  void onUsageReport(TokenUsage turn, TokenUsage cumulative) =>
+      events.add('usage: ${turn.totalTokens}');
 }
 
 void main() {
@@ -315,6 +319,130 @@ void main() {
     });
   });
 
+  // ── Critic subagent tests ─────────────────────────────────────────────────
+
+  group('SubagentRunner.runCritic', () {
+    test('approve verdict — isSilent is true', () async {
+      const json = '{"verdict":"approve","issues":[],"summary":"Looks good."}';
+      final provider = CapturingMockProvider([
+        LLMResponse(body: FinalResponse(json), usage: TokenUsage.zero),
+      ]);
+      final runner = SubagentRunner(provider: provider);
+      final result = await runner.runCritic(
+        tool: 'write_file',
+        diffOrContent: 'content',
+        model: 'mock/model',
+      );
+      expect(result.verdict, CriticVerdict.approve);
+      expect(result.isSilent, isTrue);
+      expect(result.issues, isEmpty);
+    });
+
+    test('warn verdict with issues', () async {
+      const json = '''
+{
+  "verdict": "warn",
+  "issues": [{"severity": "medium", "description": "Missing null check", "line_hint": "line 42"}],
+  "summary": "Minor null safety issue."
+}''';
+      final provider = CapturingMockProvider([
+        LLMResponse(body: FinalResponse(json), usage: TokenUsage.zero),
+      ]);
+      final runner = SubagentRunner(provider: provider);
+      final result = await runner.runCritic(
+        tool: 'patch_file',
+        diffOrContent: '-old\n+new',
+        model: 'mock/model',
+      );
+      expect(result.verdict, CriticVerdict.warn);
+      expect(result.isSilent, isFalse);
+      expect(result.issues, hasLength(1));
+      expect(result.issues.first.severity, 'medium');
+      expect(result.issues.first.lineHint, 'line 42');
+      expect(result.summary, contains('null safety'));
+    });
+
+    test('block_suggestion verdict', () async {
+      const json =
+          '{"verdict":"block_suggestion","issues":[{"severity":"high","description":"Hardcoded secret","line_hint":"line 5"}],"summary":"API key exposed."}';
+      final provider = CapturingMockProvider([
+        LLMResponse(body: FinalResponse(json), usage: TokenUsage.zero),
+      ]);
+      final runner = SubagentRunner(provider: provider);
+      final result = await runner.runCritic(
+        tool: 'write_file',
+        diffOrContent: 'content',
+        model: 'mock/model',
+      );
+      expect(result.verdict, CriticVerdict.blockSuggestion);
+      expect(result.issues.first.severity, 'high');
+    });
+
+    test('malformed JSON returns approve (graceful fallback)', () async {
+      final provider = CapturingMockProvider([
+        LLMResponse(
+          body: FinalResponse('not json at all'),
+          usage: TokenUsage.zero,
+        ),
+      ]);
+      final runner = SubagentRunner(provider: provider);
+      final result = await runner.runCritic(
+        tool: 'write_file',
+        diffOrContent: 'content',
+        model: 'mock/model',
+      );
+      expect(result.verdict, CriticVerdict.approve);
+    });
+
+    test('LLM error returns approve (never throws)', () async {
+      // Provider that throws on complete()
+      final provider = CapturingMockProvider([]);
+      final runner = SubagentRunner(provider: provider);
+      // No responses configured — will return "No more responses." FinalResponse
+      final result = await runner.runCritic(
+        tool: 'write_file',
+        diffOrContent: 'content',
+        model: 'mock/model',
+      );
+      // Should not throw; returns approve as fallback
+      expect(result, isNotNull);
+    });
+
+    test('critic system prompt is sent to provider', () async {
+      const json = '{"verdict":"approve","issues":[],"summary":"ok"}';
+      final provider = CapturingMockProvider([
+        LLMResponse(body: FinalResponse(json), usage: TokenUsage.zero),
+      ]);
+      final runner = SubagentRunner(provider: provider);
+      await runner.runCritic(
+        tool: 'write_file',
+        diffOrContent: 'fn foo() {}',
+        model: 'mock/model',
+      );
+      expect(provider.capturedRequests, hasLength(1));
+      expect(provider.capturedRequests.first.systemPrompt, contains('Critic'));
+      expect(
+        provider.capturedRequests.first.messages.first.content,
+        contains('write_file'),
+      );
+    });
+
+    test('markdown-fenced JSON is parsed correctly', () async {
+      const json =
+          '```json\n{"verdict":"warn","issues":[],"summary":"Minor."}\n```';
+      final provider = CapturingMockProvider([
+        LLMResponse(body: FinalResponse(json), usage: TokenUsage.zero),
+      ]);
+      final runner = SubagentRunner(provider: provider);
+      final result = await runner.runCritic(
+        tool: 'write_file',
+        diffOrContent: 'code',
+        model: 'mock/model',
+      );
+      expect(result.verdict, CriticVerdict.warn);
+    });
+  });
+
   // ── AgentLoop integration tests ───────────────────────────────────────────
 
   group('AgentLoop subagent integration', () {
@@ -338,7 +466,7 @@ void main() {
         auditLog: auditLog,
         mode: SessionMode.auto,
         allowedTools: {},
-        prompt: (toolCall, riskLevel) async => true,
+        prompt: (toolCall, riskLevel, {criticResult}) async => true,
       );
       contextBuilder = ContextBuilder(toolRegistry);
     });

@@ -24,6 +24,9 @@ abstract class AgentCallbacks {
   /// Returns true to continue the agent loop, false to abort.
   Future<bool> onStuck(List<ToolCall> recentCalls);
   void onChunk(String text);
+
+  /// Called with token usage after every completed turn.
+  void onUsageReport(TokenUsage turnUsage, TokenUsage cumulative);
 }
 
 /// Stateless agent loop. All state lives in [ProximaSession].
@@ -105,6 +108,8 @@ class AgentLoop {
         // When streaming, tokens are already on screen — pass empty string so
         // the renderer only emits the closing separator, not the full text again.
         callbacks.onFinalResponse(didStream ? '' : body.text);
+        // Usage printed after separator so it appears below the response.
+        callbacks.onUsageReport(response.usage, session.cumulativeUsage);
         session.status = TaskStatus.completed;
         return session;
       }
@@ -115,6 +120,7 @@ class AgentLoop {
         );
         // Same: tokens already on screen when streamed.
         callbacks.onClarify(didStream ? '' : body.question);
+        callbacks.onUsageReport(response.usage, session.cumulativeUsage);
         // Wait for next turn with user's answer.
         return session;
       }
@@ -334,9 +340,17 @@ class AgentLoop {
               toolRetries++;
               continue;
             }
-            toolResult = 'Error: $e';
+            toolResult = _formatToolError(toolCall.tool, e);
             isError = true;
             break;
+          }
+        }
+
+        // Cache read_file results for compaction deduplication.
+        if (!isError && toolCall.tool == 'read_file') {
+          final path = toolCall.args['path'] as String?;
+          if (path != null) {
+            session.fileCache[path] = toolResult;
           }
         }
 
@@ -394,6 +408,30 @@ class AgentLoop {
     callbacks.onError('Max iterations (${_config.maxIterations}) reached.');
     session.status = TaskStatus.failed;
     return session;
+  }
+
+  /// Formats a tool error with actionable context for the LLM.
+  String _formatToolError(String tool, Object error) {
+    if (error is! ToolError) {
+      return 'Tool: $tool\nError: $error\nSuggestion: Check the tool arguments and try again.';
+    }
+
+    final suggestion = switch (error.errorCode) {
+      ToolErrorCode.notFound =>
+        'Verify the path exists with list_files or glob before retrying.',
+      ToolErrorCode.permissionDenied =>
+        'This operation is not permitted. Consider a lower-risk alternative.',
+      ToolErrorCode.pathViolation =>
+        'The path is outside the working directory. Use a relative path.',
+      ToolErrorCode.timeout =>
+        'The operation timed out. Try with a smaller scope or simpler command.',
+      ToolErrorCode.parseError =>
+        'Read the target file first to confirm its exact content before patching.',
+      ToolErrorCode.unknown =>
+        'Read the relevant file(s) to diagnose the issue before retrying.',
+    };
+
+    return 'Tool: $tool\nError: ${error.message}\nSuggestion: $suggestion';
   }
 
   /// Attempt a streaming LLM call, collecting chunks and forwarding text to

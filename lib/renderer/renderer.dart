@@ -1,6 +1,7 @@
 import 'dart:io';
-import '../core/types.dart';
 import '../agent/agent_loop.dart';
+import '../agent/subagent_runner.dart' show CriticResult;
+import '../core/types.dart';
 import 'ansi_helpers.dart';
 import 'spinner.dart';
 import 'permission_prompt.dart';
@@ -112,14 +113,29 @@ class Renderer implements AgentCallbacks {
     stdout.write(text);
   }
 
+  @override
+  void onUsageReport(TokenUsage turn, TokenUsage cumulative) {
+    stdout.writeln(
+      dim(
+        '  ↑${turn.inputTokens} ↓${turn.outputTokens}  total: ${cumulative.totalTokens}',
+      ),
+    );
+  }
+
   /// Show permission prompt and return decision.
   Future<bool> promptPermission(
     ToolCall toolCall,
     RiskLevel riskLevel, {
     String? diffText,
+    CriticResult? criticResult,
   }) async {
     hideSpinner();
-    return PermissionPrompt.confirm(toolCall, riskLevel, diffText: diffText);
+    return PermissionPrompt.confirm(
+      toolCall,
+      riskLevel,
+      diffText: diffText,
+      criticResult: criticResult,
+    );
   }
 
   void print(String text) => stdout.writeln(text);

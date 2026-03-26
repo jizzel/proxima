@@ -42,7 +42,7 @@ void main() {
     auditLog: auditLog,
     mode: mode,
     allowedTools: allowedTools,
-    prompt: (toolCall, riskLevel) async {
+    prompt: (toolCall, riskLevel, {criticResult}) async {
       promptCalled = true;
       return promptResult;
     },
@@ -110,6 +110,38 @@ void main() {
         'sess1',
       );
       expect(result.decision, GateDecision.allow);
+      expect(promptCalled, isFalse);
+    });
+
+    test('safe mode blocks confirm-level tools without prompt', () async {
+      final gate = makeGate(mode: SessionMode.safe);
+      final result = await gate.evaluate(
+        call('write_file', {'path': 'a.dart', 'content': ''}),
+        'sess1',
+      );
+      expect(result.decision, GateDecision.deny);
+      expect(promptCalled, isFalse);
+      expect(result.reason, contains('safe'));
+    });
+
+    test('safe mode still allows safe-level tools', () async {
+      final gate = makeGate(mode: SessionMode.safe);
+      final result = await gate.evaluate(
+        call('read_file', {'path': 'a.dart'}),
+        'sess1',
+      );
+      expect(result.decision, GateDecision.allow);
+      expect(promptCalled, isFalse);
+    });
+
+    test('denied tool is rejected before risk classification', () async {
+      final gate = makeGate();
+      final result = await gate.evaluate(
+        call('read_file', {'path': 'a.dart'}),
+        'sess1',
+        deniedTools: {'read_file'},
+      );
+      expect(result.decision, GateDecision.deny);
       expect(promptCalled, isFalse);
     });
   });

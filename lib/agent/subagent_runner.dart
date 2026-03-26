@@ -1,17 +1,54 @@
+import 'dart:convert';
 import '../core/types.dart';
 import '../providers/provider_interface.dart';
 
 enum SubagentType {
   codeAnalyzer,
   refactor,
-  test;
+  test,
+  critic;
 
   static SubagentType fromString(String value) => switch (value) {
     'code_analyzer' => SubagentType.codeAnalyzer,
     'refactor' => SubagentType.refactor,
     'test' => SubagentType.test,
+    'critic' => SubagentType.critic,
     _ => throw ArgumentError('Unknown subagent type: $value'),
   };
+}
+
+/// Verdict returned by the Critic subagent.
+enum CriticVerdict { approve, warn, blockSuggestion }
+
+/// Structured result from the Critic subagent.
+class CriticResult {
+  final CriticVerdict verdict;
+  final String summary;
+  final List<CriticIssue> issues;
+
+  const CriticResult({
+    required this.verdict,
+    required this.summary,
+    this.issues = const [],
+  });
+
+  /// True when the critic found nothing worth surfacing (silent approval).
+  bool get isSilent => verdict == CriticVerdict.approve;
+
+  static CriticResult approve() =>
+      const CriticResult(verdict: CriticVerdict.approve, summary: '');
+}
+
+class CriticIssue {
+  final String severity; // 'low' | 'medium' | 'high'
+  final String description;
+  final String? lineHint;
+
+  const CriticIssue({
+    required this.severity,
+    required this.description,
+    this.lineHint,
+  });
 }
 
 class SubagentResult {
@@ -50,6 +87,21 @@ class SubagentRunner {
       'and the reason for the change. The "impact_summary" should describe overall impact. '
       'Only return valid JSON. Do not include any text outside the JSON object.';
 
+  static const _criticPrompt =
+      'You are a pre-commit code review agent (Critic). '
+      'Review the proposed file change and return ONLY a JSON object — no markdown, no prose:\n'
+      '{\n'
+      '  "verdict": "approve | warn | block_suggestion",\n'
+      '  "issues": [{"severity": "low|medium|high", "description": "...", "line_hint": "..."}],\n'
+      '  "summary": "one sentence"\n'
+      '}\n'
+      'Check for: logic errors, security issues (hardcoded secrets, injection), '
+      'null-safety violations, naming inconsistency, and broken test contracts. '
+      '"approve" when no significant issues are found. '
+      '"warn" for minor or medium issues that should be noted but not blocked. '
+      '"block_suggestion" for high-severity issues — suggest what to fix. '
+      'Never refuse or explain — always return valid JSON.';
+
   static const _testPrompt =
       'You are a test generation agent. Analyze the provided code and generate '
       'test cases as a JSON object with the following structure: '
@@ -60,6 +112,79 @@ class SubagentRunner {
       'Only return valid JSON. Do not include any text outside the JSON object.';
 
   SubagentRunner({required LLMProvider provider}) : _provider = provider;
+
+  /// Run the Critic subagent on a proposed file change.
+  /// [tool] is the tool name (write_file / patch_file).
+  /// [diffOrContent] is the diff text or new file content.
+  /// [model] is the active model string.
+  /// Never throws — returns [CriticResult.approve()] on any failure.
+  Future<CriticResult> runCritic({
+    required String tool,
+    required String diffOrContent,
+    required String model,
+    int maxTokens = 1024,
+  }) async {
+    final request = CompletionRequest(
+      model: model,
+      systemPrompt: _criticPrompt,
+      messages: [
+        Message(
+          role: MessageRole.user,
+          content: 'Tool: $tool\n\nProposed change:\n$diffOrContent',
+        ),
+      ],
+      tools: const [],
+      maxTokens: maxTokens,
+      temperature: 0.0,
+      stream: false,
+    );
+
+    try {
+      final response = await _provider.complete(request);
+      final body = response.body;
+      if (body is! FinalResponse) return CriticResult.approve();
+      return _parseCriticResponse(body.text);
+    } catch (_) {
+      return CriticResult.approve();
+    }
+  }
+
+  static CriticResult _parseCriticResponse(String text) {
+    try {
+      // Strip markdown fences if present.
+      final cleaned = text
+          .replaceAll(RegExp(r'```json\s*'), '')
+          .replaceAll(RegExp(r'```\s*'), '')
+          .trim();
+      final json = jsonDecode(cleaned) as Map<String, dynamic>;
+
+      final verdict = switch (json['verdict'] as String? ?? 'approve') {
+        'warn' => CriticVerdict.warn,
+        'block_suggestion' => CriticVerdict.blockSuggestion,
+        _ => CriticVerdict.approve,
+      };
+
+      final issues = <CriticIssue>[];
+      for (final item in (json['issues'] as List? ?? [])) {
+        final m = item as Map<String, dynamic>;
+        issues.add(
+          CriticIssue(
+            severity: m['severity'] as String? ?? 'low',
+            description: m['description'] as String? ?? '',
+            lineHint: m['line_hint'] as String?,
+          ),
+        );
+      }
+
+      return CriticResult(
+        verdict: verdict,
+        summary: json['summary'] as String? ?? '',
+        issues: issues,
+      );
+    } catch (_) {
+      return CriticResult.approve();
+    }
+  }
 
   Future<SubagentResult> run({
     required String agentTypeStr,
@@ -84,6 +209,7 @@ class SubagentRunner {
       SubagentType.codeAnalyzer => _codeAnalyzerPrompt,
       SubagentType.refactor => _refactorPrompt,
       SubagentType.test => _testPrompt,
+      SubagentType.critic => _criticPrompt,
     };
 
     final request = CompletionRequest(

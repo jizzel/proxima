@@ -82,13 +82,57 @@ class Compaction {
     return allKept;
   }
 
+  /// Deduplicate read_file tool results using the session file cache.
+  /// Only the most recent read of each canonical path is kept verbatim;
+  /// older reads are replaced with a placeholder to save tokens.
+  static List<Message> deduplicateFileReads(
+    List<Message> messages,
+    Map<String, String> fileCache,
+  ) {
+    if (fileCache.isEmpty) return messages;
+
+    // Track which path we've seen the latest read for (scanning in reverse).
+    final seenLatest = <String>{};
+    // Map from message index → replacement content.
+    final replacements = <int, String>{};
+
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final m = messages[i];
+      if (m.role != MessageRole.tool || m.toolName != 'read_file') continue;
+      // Check the preceding assistant message for the path arg.
+      if (i == 0) continue;
+      final assistantMsg = messages[i - 1];
+      if (assistantMsg.role != MessageRole.assistant) continue;
+      final path = assistantMsg.toolInput?['path'] as String?;
+      if (path == null) continue;
+
+      if (!seenLatest.contains(path)) {
+        seenLatest.add(path); // keep this one verbatim
+      } else {
+        replacements[i] =
+            '[File already in context — see most recent read above]';
+      }
+    }
+
+    if (replacements.isEmpty) return messages;
+
+    return [
+      for (var i = 0; i < messages.length; i++)
+        replacements.containsKey(i)
+            ? messages[i].copyWith(content: replacements[i]!)
+            : messages[i],
+    ];
+  }
+
   /// Apply all three passes in sequence.
   static List<Message> compact(
     List<Message> messages,
     TokenBudget budget,
-    String query,
-  ) {
-    var result = pruneToolResults(messages, budget.toolResults ~/ 4);
+    String query, {
+    Map<String, String> fileCache = const {},
+  }) {
+    var result = deduplicateFileReads(messages, fileCache);
+    result = pruneToolResults(result, budget.toolResults ~/ 4);
     result = truncateHistory(result, budget.conversationHistory);
     result = relevanceFilter(result, query, 100);
     return result;

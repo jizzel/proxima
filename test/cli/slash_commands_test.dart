@@ -784,7 +784,7 @@ void main() {
         auditLog: auditLog,
         mode: SessionMode.confirm, // confirm mode — would normally prompt
         allowedTools: {},
-        prompt: (_, _) async => false, // prompt always denies
+        prompt: (_, _, {criticResult}) async => false, // prompt always denies
       );
 
       // Allow write_file via /allow.

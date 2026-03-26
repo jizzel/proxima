@@ -111,6 +111,10 @@ class ProximaSession {
   int iterationCount;
   TaskStatus status;
 
+  /// Cache of file contents read this session. Key: canonical path.
+  /// Used by compaction to deduplicate repeated `read_file` tool results.
+  final Map<String, String> fileCache;
+
   ProximaSession({
     required this.id,
     required this.createdAt,
@@ -122,12 +126,14 @@ class ProximaSession {
     List<TaskRecord>? taskHistory,
     SessionPermissions? permissions,
     TokenUsage? cumulativeUsage,
+    Map<String, String>? fileCache,
     this.iterationCount = 0,
     this.status = TaskStatus.running,
   }) : history = history ?? [],
        taskHistory = taskHistory ?? [],
        permissions = permissions ?? const SessionPermissions(),
-       cumulativeUsage = cumulativeUsage ?? TokenUsage.zero;
+       cumulativeUsage = cumulativeUsage ?? TokenUsage.zero,
+       fileCache = fileCache ?? {};
 
   factory ProximaSession.create(ProximaConfig config) {
     final now = DateTime.now();

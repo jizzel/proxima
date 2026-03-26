@@ -1,6 +1,6 @@
 name: proxima
 description: A terminal-native, model-agnostic coding agent built in Dart.
-version: 1.0.0
+version: 1.0.1
 
 environment:
   sdk: ^3.11.1

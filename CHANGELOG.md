@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.0.1] — 2026-03-26
+
 ### Added
 - `SessionMode.safe` now enforced in `PermissionGate` — any tool above `safe` risk level is denied without prompt when the session is in safe mode (step 3a, audited as `safe_mode_blocked`)
 - `ToolErrorCode` enum on `ToolError` (`notFound | permissionDenied | pathViolation | timeout | parseError | unknown`) — tools can now classify errors for actionable LLM feedback
@@ -37,10 +41,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `ProximaConfig.fallbackModel` field with yaml key `fallback_model` (default: null)
 - Fallback model wired in `repl.dart` `_getAgentLoop()`
 - 5 new fallback provider tests
+
 ### Fixed
 - **`FallbackProvider.stream()` never reached secondary** — on primary stream failure the old implementation yielded a done chunk with `hasToolUse: false`, which the agent loop treated as a successful empty response; secondary was never tried. Fixed by rethrowing the non-auth `LLMError` so `_streamResponse`'s catch block falls back to `complete()`, which correctly retries on the secondary
 - **Token usage display appeared before response separator** — `onUsageReport` was called before `onFinalResponse`/`onClarify`, so the dim token line printed above the separator instead of below it. Swapped order: text → separator → usage
 - **`Compaction.deduplicateFileReads()` missing role guard** — assumed `messages[i-1]` was always an assistant message; added explicit `if (assistantMsg.role != MessageRole.assistant) continue` guard for malformed history
+- **Critic `diffOrContent` fallback was too verbose** — `toolCall.args.toString()` sent the full serialized args map to the critic LLM when neither `content` nor `patch` was present; replaced with `''` to avoid wasting tokens on irrelevant data
 - 4 additional tests (streaming fallback, auth rethrow, fallback path, orphaned tool message)
 - 237 tests total
 
@@ -156,7 +162,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/jizzel/proxima/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jizzel/proxima/compare/v0.1.4...v1.0.0
 [0.1.4]: https://github.com/jizzel/proxima/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jizzel/proxima/compare/v0.1.2...v0.1.3

@@ -47,6 +47,7 @@ class ContextBuilder {
       session.history,
       budget,
       latestUserMessage,
+      fileCache: session.fileCache,
     );
 
     return CompletionRequest(
@@ -65,18 +66,50 @@ class ContextBuilder {
     TokenBudget budget,
   ) {
     final buf = StringBuffer();
-    buf.writeln('You are Proxima, a terminal-native coding agent.');
-    buf.writeln('You help users understand, navigate, and modify codebases.');
-    buf.writeln('');
-    buf.writeln('Rules:');
-    buf.writeln('- Always reason before using a tool.');
-    buf.writeln('- Use tools to gather information before making changes.');
+
+    // A — Identity
     buf.writeln(
-      '- Prefer targeted edits (patch_file) over full rewrites (write_file).',
+      'You are Proxima, a terminal-native coding agent operating with explicit human oversight.',
     );
-    buf.writeln('- When done, give a clear final answer.');
+    buf.writeln(
+      'You help users understand, navigate, and modify codebases through structured tool execution.',
+    );
+    buf.writeln(
+      'Always reason before acting. Use tools to gather information before making changes.',
+    );
+    buf.writeln('');
+
+    // B — Operating rules
+    buf.writeln('Rules (follow in order):');
+    buf.writeln(
+      '1. Always read before writing. Never patch a file you have not read this session.',
+    );
+    buf.writeln(
+      '2. Use patch_file for targeted edits. Use write_file only for new files or full rewrites.',
+    );
+    buf.writeln('3. After any write, verify with read_file.');
+    buf.writeln(
+      '4. When a tool returns an error, diagnose before retrying — re-read the target file.',
+    );
+    buf.writeln(
+      '5. Do not call the same tool with identical args more than twice. If stuck, emit clarify.',
+    );
+    buf.writeln(
+      '6. In safe mode, only use: read_file, list_files, glob, search, git_status, git_diff, git_log.',
+    );
+    buf.writeln(
+      '7. After run_tests failures: read the failing test → read the implementation → patch → re-test. Maximum 3 fix/verify cycles.',
+    );
+    buf.writeln('');
+
+    // C — Project context + session state
+    buf.writeln('Session mode: ${session.mode.name}');
+    buf.writeln(
+      'Tokens used this session: ${session.cumulativeUsage.totalTokens} / ${budget.total}',
+    );
     buf.writeln('');
     buf.writeln(projectIndex.toPromptText());
+
     return buf.toString();
   }
 }

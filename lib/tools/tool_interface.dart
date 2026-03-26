@@ -35,13 +35,29 @@ abstract class ProximaTool {
   Future<DryRunResult> dryRun(Map<String, dynamic> args, String workingDir);
 }
 
+/// Categorises the kind of failure a tool encountered.
+enum ToolErrorCode {
+  notFound,
+  permissionDenied,
+  pathViolation,
+  timeout,
+  parseError,
+  unknown,
+}
+
 /// Thrown when a tool encounters an error.
 class ToolError implements Exception {
   final String tool;
   final String message;
   final bool retryable;
+  final ToolErrorCode errorCode;
 
-  const ToolError(this.tool, this.message, {this.retryable = false});
+  const ToolError(
+    this.tool,
+    this.message, {
+    this.retryable = false,
+    this.errorCode = ToolErrorCode.unknown,
+  });
 
   @override
   String toString() => 'ToolError($tool): $message';

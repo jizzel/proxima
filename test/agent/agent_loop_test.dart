@@ -154,6 +154,9 @@ class MockCallbacks implements AgentCallbacks {
 
   @override
   void onChunk(String text) => events.add('chunk: $text');
+  @override
+  void onUsageReport(TokenUsage turn, TokenUsage cumulative) =>
+      events.add('usage: ${turn.totalTokens}');
 }
 
 void main() {
@@ -176,7 +179,7 @@ void main() {
       auditLog: auditLog,
       mode: SessionMode.auto,
       allowedTools: {},
-      prompt: (toolCall, riskLevel) async => true,
+      prompt: (toolCall, riskLevel, {criticResult}) async => true,
     );
     contextBuilder = ContextBuilder(toolRegistry);
   });

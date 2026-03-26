@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
+import '../agent/subagent_runner.dart' show CriticResult, CriticVerdict;
 import '../core/types.dart';
 import 'ansi_helpers.dart';
 import 'diff_renderer.dart';
@@ -12,6 +13,7 @@ class PermissionPrompt {
     ToolCall toolCall,
     RiskLevel riskLevel, {
     String? diffText,
+    CriticResult? criticResult,
   }) async {
     final riskLabel = switch (riskLevel) {
       RiskLevel.confirm => yellow('[CONFIRM]'),
@@ -29,6 +31,20 @@ class PermissionPrompt {
     if (diffText != null && diffText.isNotEmpty) {
       stdout.writeln('');
       stdout.writeln(DiffRenderer.render(diffText));
+    }
+
+    // Critic note — only shown for warn/block_suggestion verdicts.
+    if (criticResult != null && !criticResult.isSilent) {
+      stdout.writeln('');
+      final label = criticResult.verdict == CriticVerdict.blockSuggestion
+          ? boldRed('  Critic: BLOCK SUGGESTION')
+          : yellow('  Critic: WARN');
+      stdout.writeln('$label — ${criticResult.summary}');
+      for (final issue in criticResult.issues) {
+        final sev = issue.severity == 'high' ? red : yellow;
+        final hint = issue.lineHint != null ? dim(' (${issue.lineHint})') : '';
+        stdout.writeln('    ${sev("•")} ${issue.description}$hint');
+      }
     }
 
     if (riskLevel == RiskLevel.highRisk) {

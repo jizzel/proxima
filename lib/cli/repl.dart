@@ -27,6 +27,7 @@ import '../permissions/audit_log.dart';
 import '../permissions/permission_gate.dart';
 import '../context/context_builder.dart';
 import '../agent/agent_loop.dart';
+import '../agent/subagent_runner.dart' show SubagentRunner;
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
 import 'arg_parser.dart';
@@ -76,8 +77,31 @@ class ProximaRepl {
       auditLog: auditLog,
       mode: _config.mode,
       allowedTools: {},
-      prompt: (toolCall, riskLevel) =>
-          _renderer.promptPermission(toolCall, riskLevel),
+      prompt: (toolCall, riskLevel, {criticResult}) => _renderer
+          .promptPermission(toolCall, riskLevel, criticResult: criticResult),
+      criticCallback: _config.criticOnWrite
+          ? (toolCall) async {
+              // Critic runs with the active model; runner is created on demand.
+              final providerRegistry = ProviderRegistry(
+                env: {
+                  'ANTHROPIC_API_KEY': _config.anthropicApiKey ?? '',
+                  'OLLAMA_BASE_URL':
+                      _config.ollamaBaseUrl ?? 'http://localhost:11434',
+                },
+              );
+              final provider = providerRegistry.create(_activeModel);
+              final runner = SubagentRunner(provider: provider);
+              final content =
+                  toolCall.args['content'] as String? ??
+                  toolCall.args['patch'] as String? ??
+                  '';
+              return runner.runCritic(
+                tool: toolCall.tool,
+                diffOrContent: content,
+                model: _activeModel,
+              );
+            }
+          : null,
     );
 
     _sessionStorage = SessionStorage.forCurrentUser();
@@ -125,7 +149,10 @@ class ProximaRepl {
       },
     );
 
-    final provider = providerRegistry.create(_activeModel);
+    final provider = providerRegistry.create(
+      _activeModel,
+      fallbackModel: _config.fallbackModel,
+    );
     // Update with the exact value from the provider (may differ from estimate).
     _contextWindow = provider.capabilities.contextWindow;
     final contextBuilder = ContextBuilder(

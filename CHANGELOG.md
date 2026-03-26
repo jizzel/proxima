@@ -9,6 +9,41 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `SessionMode.safe` now enforced in `PermissionGate` — any tool above `safe` risk level is denied without prompt when the session is in safe mode (step 3a, audited as `safe_mode_blocked`)
+- `ToolErrorCode` enum on `ToolError` (`notFound | permissionDenied | pathViolation | timeout | parseError | unknown`) — tools can now classify errors for actionable LLM feedback
+- `_formatToolError()` helper in `AgentLoop` — tool errors now return structured context (`Tool: …\nError: …\nSuggestion: …`) instead of bare `'Error: $e'` strings
+- `AgentCallbacks.onUsageReport(turnUsage, cumulative)` — called after every completed turn; `Renderer` displays `↑N ↓N  total: N` as a dim line after each response
+- System prompt overhauled in `ContextBuilder._buildSystemPrompt()`: identity section, 7 ordered operating rules (read-before-write, patch-over-write, verify-after-write, diagnose-before-retry, no-identical-duplicate-calls, safe-mode-tool-list, test-fix-cycle limit), and session state (mode + cumulative token count)
+- 3 new permission gate tests: safe mode blocks confirm tools, safe mode allows safe tools, deny list pre-empts risk classification
+- `TestOutputParser` — parses raw test runner output into structured `TestResult`/`TestFailure` objects; supports Dart, Jest, Pytest, Cargo, Go; graceful fallback to raw string on unparseable output
+- `run_tests` tool now embeds `FRAMEWORK:<name>` marker in output and returns a concise structured failure summary (test name, file, message) before the raw output; LLM gets actionable context instead of wall-of-text stdout
+- 15 new parser tests covering all five frameworks and the framework marker extractor
+- Critic subagent (`SubagentType.critic`) — pre-commit review agent that fires before the permission prompt on `write_file`/`patch_file` at `confirm` risk; returns `CriticResult` with `approve | warn | block_suggestion` verdict; advisory only, never a hard gate; silent on `approve`; displays amber/red note above y/n prompt for `warn`/`block_suggestion`
+- `CriticResult`, `CriticVerdict`, `CriticIssue` types added to `subagent_runner.dart`
+- `SubagentRunner.runCritic()` — never throws; graceful fallback to `approve` on LLM error or malformed JSON; strips markdown fences; capped at 1024 tokens
+- `PermissionGate.criticCallback` — optional `CriticCallback?` wired in before step 6 (user prompt); only fires for confirm-level write tools, never in `auto` mode
+- `PromptCallback` extended with `{CriticResult? criticResult}` named parameter
+- `critic_on_write: true` config field in `.proxima/config.yaml` (default: true)
+- `ProximaConfig.criticOnWrite` field with yaml key `critic_on_write`
+- Critic wired in `repl.dart` using the active model and a fresh provider per invocation
+- 7 new critic tests (approve/warn/block_suggestion/malformed JSON/LLM error/system prompt/markdown fence)
+- `ProximaSession.fileCache` — `Map<String, String>` keyed by canonical path; populated by the agent loop after every successful `read_file` call
+- `Compaction.deduplicateFileReads()` — new Pass 0 that replaces all but the most recent `read_file` tool result for any given path with `[File already in context]`; integrated into `Compaction.compact()` via optional `fileCache` param; estimated 15–30% token savings in file-heavy sessions
+- `ContextBuilder` passes `session.fileCache` to `Compaction.compact()`
+- 11 new compaction tests covering deduplication, pruning, and truncation
+- `FallbackProvider` (`lib/providers/fallback_provider.dart`) — wraps a primary `LLMProvider` with a secondary; transparently retries on non-auth `LLMError`; auth errors rethrown immediately; `listModels()` also falls back; no changes to `AgentLoop`
+- `ProviderRegistry.create()` accepts optional `fallbackModel` string; wraps primary in `FallbackProvider` when set; best-effort (ignores fallback config errors)
+- `ProximaConfig.fallbackModel` field with yaml key `fallback_model` (default: null)
+- Fallback model wired in `repl.dart` `_getAgentLoop()`
+- 5 new fallback provider tests
+### Fixed
+- **`FallbackProvider.stream()` never reached secondary** — on primary stream failure the old implementation yielded a done chunk with `hasToolUse: false`, which the agent loop treated as a successful empty response; secondary was never tried. Fixed by rethrowing the non-auth `LLMError` so `_streamResponse`'s catch block falls back to `complete()`, which correctly retries on the secondary
+- **Token usage display appeared before response separator** — `onUsageReport` was called before `onFinalResponse`/`onClarify`, so the dim token line printed above the separator instead of below it. Swapped order: text → separator → usage
+- **`Compaction.deduplicateFileReads()` missing role guard** — assumed `messages[i-1]` was always an assistant message; added explicit `if (assistantMsg.role != MessageRole.assistant) continue` guard for malformed history
+- 4 additional tests (streaming fallback, auth rethrow, fallback path, orphaned tool message)
+- 237 tests total
+
 ---
 
 ## [1.0.0] — 2026-03-20

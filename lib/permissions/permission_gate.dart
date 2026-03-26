@@ -1,3 +1,4 @@
+import '../agent/subagent_runner.dart' show CriticResult;
 import '../core/types.dart';
 import 'risk_classifier.dart';
 import 'audit_log.dart';
@@ -11,14 +12,19 @@ class PermissionResult {
   const PermissionResult(this.decision, {this.reason});
 }
 
+/// Callback that optionally runs the Critic subagent before confirm prompts.
+/// Receives the [ToolCall] and returns a [CriticResult]. Never throws.
+typedef CriticCallback = Future<CriticResult> Function(ToolCall toolCall);
+
 /// Evaluates every tool call through the permission gate.
-/// Flow: blocked → allowlist → mode → prompt (confirm/high_risk)
+/// Flow: blocked → allowlist → mode → [critic] → prompt (confirm/high_risk)
 class PermissionGate {
   final RiskClassifier _classifier;
   final AuditLog _auditLog;
   SessionMode mode;
   final Set<String> _allowedTools;
   final PromptCallback _prompt;
+  final CriticCallback? _criticCallback;
 
   PermissionGate({
     required RiskClassifier classifier,
@@ -26,10 +32,12 @@ class PermissionGate {
     required this.mode,
     required Set<String> allowedTools,
     required PromptCallback prompt,
+    CriticCallback? criticCallback,
   }) : _classifier = classifier,
        _auditLog = auditLog,
        _allowedTools = allowedTools,
-       _prompt = prompt;
+       _prompt = prompt,
+       _criticCallback = criticCallback;
 
   /// Evaluate whether [toolCall] can execute.
   /// [sessionId] is used for audit logging.
@@ -105,6 +113,22 @@ class PermissionGate {
       return const PermissionResult(GateDecision.allow);
     }
 
+    // 3a. Safe session mode — block any tool above safe risk level.
+    if (mode == SessionMode.safe && riskLevel != RiskLevel.safe) {
+      await _auditLog.record(
+        sessionId: sessionId,
+        tool: toolCall.tool,
+        args: toolCall.args,
+        riskLevel: riskLevel,
+        decision: 'safe_mode_blocked',
+        reason: 'Session is in safe (read-only) mode',
+      );
+      return const PermissionResult(
+        GateDecision.deny,
+        reason: 'Tool blocked: session is in safe (read-only) mode.',
+      );
+    }
+
     // 4. Auto mode — execute confirm-level tools without prompt.
     if (mode == SessionMode.auto && riskLevel == RiskLevel.confirm) {
       await _auditLog.record(
@@ -118,8 +142,22 @@ class PermissionGate {
       return const PermissionResult(GateDecision.allow);
     }
 
-    // 5. Prompt the user.
-    final userDecision = await _prompt(toolCall, riskLevel);
+    // 5. Critic subagent — advisory review before confirm-level writes.
+    // Only fires on write tools at confirm risk; never in auto mode; never throws.
+    CriticResult? criticResult;
+    if (_criticCallback != null &&
+        riskLevel == RiskLevel.confirm &&
+        mode != SessionMode.auto &&
+        (toolCall.tool == 'write_file' || toolCall.tool == 'patch_file')) {
+      criticResult = await _criticCallback(toolCall);
+    }
+
+    // 6. Prompt the user.
+    final userDecision = await _prompt(
+      toolCall,
+      riskLevel,
+      criticResult: criticResult,
+    );
     final decision = userDecision ? 'user_approved' : 'user_denied';
 
     await _auditLog.record(
@@ -142,4 +180,8 @@ class PermissionGate {
 
 /// Callback used by PermissionGate to prompt the user.
 typedef PromptCallback =
-    Future<bool> Function(ToolCall toolCall, RiskLevel riskLevel);
+    Future<bool> Function(
+      ToolCall toolCall,
+      RiskLevel riskLevel, {
+      CriticResult? criticResult,
+    });

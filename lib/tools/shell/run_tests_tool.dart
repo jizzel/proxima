@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
 import '../tool_interface.dart';
+import 'test_output_parser.dart';
 
 class RunTestsTool implements ProximaTool {
   @override
@@ -38,6 +39,8 @@ class RunTestsTool implements ProximaTool {
       throw ToolError(name, 'Could not detect test framework in $workingDir');
     }
 
+    final framework = _detectFramework(workingDir);
+
     try {
       final result = await Process.run(
         'bash',
@@ -46,19 +49,66 @@ class RunTestsTool implements ProximaTool {
         runInShell: false,
       ).timeout(const Duration(seconds: 120));
 
-      final output = StringBuffer();
-      output.write(result.stdout);
+      final rawOutput = StringBuffer();
+      rawOutput.write(result.stdout);
       if (result.stderr.toString().isNotEmpty) {
-        output.write('\nSTDERR: ${result.stderr}');
+        rawOutput.write('\nSTDERR: ${result.stderr}');
+      }
+
+      // Parse into structured result for LLM-friendly output.
+      final fw = await framework;
+      final parsed = fw != null
+          ? TestOutputParser.parse(rawOutput.toString(), fw)
+          : null;
+
+      final output = StringBuffer();
+      if (parsed != null) {
+        output.writeln(parsed.toPromptText());
+        if (!parsed.passed) {
+          // Include raw output after the summary so the LLM has full context.
+          output.writeln('\n--- raw output ---');
+          output.write(rawOutput);
+        }
+      } else {
+        output.write(rawOutput);
       }
       output.write('\nExit code: ${result.exitCode}');
+      if (fw != null) {
+        output.write('$kFrameworkMarker${fw.name}');
+      }
 
       return output.toString().trim();
     } on TimeoutException {
-      throw ToolError(name, 'Tests timed out after 120s');
+      throw ToolError(
+        name,
+        'Tests timed out after 120s',
+        errorCode: ToolErrorCode.timeout,
+      );
     } catch (e) {
       throw ToolError(name, 'Tests failed to run: $e');
     }
+  }
+
+  /// Detect which test framework the project uses.
+  Future<TestFramework?> _detectFramework(String workingDir) async {
+    if (await File(p.join(workingDir, 'pubspec.yaml')).exists()) {
+      return TestFramework.dart;
+    }
+    if (await File(p.join(workingDir, 'package.json')).exists()) {
+      return TestFramework.jest;
+    }
+    if (await File(p.join(workingDir, 'Cargo.toml')).exists()) {
+      return TestFramework.cargo;
+    }
+    if (await File(p.join(workingDir, 'go.mod')).exists()) {
+      return TestFramework.go;
+    }
+    if (await File(p.join(workingDir, 'requirements.txt')).exists() ||
+        await File(p.join(workingDir, 'setup.py')).exists() ||
+        await File(p.join(workingDir, 'pyproject.toml')).exists()) {
+      return TestFramework.pytest;
+    }
+    return null;
   }
 
   /// Sanitize a user-supplied string to only allow safe identifier characters.

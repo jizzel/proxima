@@ -1,6 +1,7 @@
 import '../core/types.dart';
 import 'provider_interface.dart';
 import 'anthropic_provider.dart';
+import 'fallback_provider.dart';
 import 'ollama_provider.dart';
 import 'react_fallback.dart';
 
@@ -12,7 +13,24 @@ class ProviderRegistry {
   ProviderRegistry({Map<String, String>? env}) : _env = env ?? const {};
 
   /// Parse "provider/model" string and return configured provider.
-  LLMProvider create(String providerModel) {
+  ///
+  /// If [fallbackModel] is set, the primary provider is wrapped in a
+  /// [FallbackProvider] that transparently retries on the secondary on
+  /// non-auth [LLMError]s.
+  LLMProvider create(String providerModel, {String? fallbackModel}) {
+    final primary = _createFromSpec(providerModel);
+    if (fallbackModel == null || fallbackModel.isEmpty) return primary;
+
+    try {
+      final secondary = _createFromSpec(fallbackModel);
+      return FallbackProvider(primary, secondary);
+    } catch (_) {
+      // Fallback config is best-effort — if it fails, return primary as-is.
+      return primary;
+    }
+  }
+
+  LLMProvider _createFromSpec(String providerModel) {
     final parts = providerModel.split('/');
     if (parts.length < 2) {
       throw ArgumentError(

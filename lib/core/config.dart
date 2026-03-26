@@ -17,6 +17,8 @@ class ProximaConfig {
   final int maxSubagentDelegations;
   final String? anthropicApiKey;
   final String? ollamaBaseUrl;
+  final bool criticOnWrite;
+  final String? fallbackModel;
   final Map<String, dynamic> raw;
 
   const ProximaConfig({
@@ -32,6 +34,8 @@ class ProximaConfig {
     this.maxSubagentDelegations = 2,
     this.anthropicApiKey,
     this.ollamaBaseUrl,
+    this.criticOnWrite = true,
+    this.fallbackModel,
     this.raw = const {},
   });
 
@@ -46,6 +50,7 @@ class ProximaConfig {
     maxRetriesLlm: 2,
     maxRetriesSchema: 2,
     maxSubagentDelegations: 2,
+    criticOnWrite: true,
     anthropicApiKey: Platform.environment['ANTHROPIC_API_KEY'],
     ollamaBaseUrl:
         Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
@@ -111,6 +116,8 @@ class ProximaConfig {
           yaml['max_subagent_delegations'] as int? ?? maxSubagentDelegations,
       anthropicApiKey: yaml['anthropic_api_key'] as String? ?? anthropicApiKey,
       ollamaBaseUrl: yaml['ollama_base_url'] as String? ?? ollamaBaseUrl,
+      criticOnWrite: yaml['critic_on_write'] as bool? ?? criticOnWrite,
+      fallbackModel: yaml['fallback_model'] as String? ?? fallbackModel,
       raw: Map<String, dynamic>.from(yaml.value),
     );
   }
@@ -137,6 +144,8 @@ class ProximaConfig {
     maxSubagentDelegations: maxSubagentDelegations,
     anthropicApiKey: anthropicApiKey ?? this.anthropicApiKey,
     ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
+    criticOnWrite: criticOnWrite,
+    fallbackModel: fallbackModel,
     raw: raw,
   );
 }

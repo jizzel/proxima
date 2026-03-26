@@ -94,7 +94,7 @@ class ProximaRepl {
               final content =
                   toolCall.args['content'] as String? ??
                   toolCall.args['patch'] as String? ??
-                  toolCall.args.toString();
+                  '';
               return runner.runCritic(
                 tool: toolCall.tool,
                 diffOrContent: content,

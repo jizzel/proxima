@@ -147,6 +147,13 @@ class AgentLoop {
         // Same: tokens already on screen when streamed.
         callbacks.onClarify(didStream ? '' : body.question);
 
+        callbacks.onUsageReport(
+          response.usage,
+          session.cumulativeUsage,
+          turnCost,
+          session.cumulativeCost,
+        );
+
         if (body.options.isNotEmpty) {
           final idx = await callbacks.onClarifyWithOptions(
             body.question,
@@ -154,21 +161,9 @@ class AgentLoop {
           );
           final answer = body.options[idx.clamp(0, body.options.length - 1)];
           session.addMessage(Message(role: MessageRole.user, content: answer));
-          callbacks.onUsageReport(
-            response.usage,
-            session.cumulativeUsage,
-            turnCost,
-            session.cumulativeCost,
-          );
           continue; // stay in loop — answer injected, keep going
         }
 
-        callbacks.onUsageReport(
-          response.usage,
-          session.cumulativeUsage,
-          turnCost,
-          session.cumulativeCost,
-        );
         // Wait for next turn with user's answer.
         return session;
       }

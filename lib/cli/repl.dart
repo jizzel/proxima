@@ -603,7 +603,6 @@ class ProximaRepl {
     }
 
     _session = ProximaSession.create(_config);
-    _renderer.showSpinner('Executing plan…');
     try {
       _session = await _getAgentLoop().runTurn(
         _session,

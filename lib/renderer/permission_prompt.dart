@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'package:dart_console/dart_console.dart';
 import '../agent/subagent_runner.dart' show CriticResult, CriticVerdict;
 import '../core/types.dart';
 import 'ansi_helpers.dart';
 import 'diff_renderer.dart';
+import 'picker_widget.dart';
 
 /// Interactive permission prompts.
 class PermissionPrompt {
@@ -54,38 +54,13 @@ class PermissionPrompt {
     return _confirmPrompt();
   }
 
-  /// Single-keypress confirm: y/o = allow, n/s = deny.
-  /// Works correctly in raw mode (dart_console's Console.readKey()).
   static bool _confirmPrompt() {
-    final console = Console.scrolling();
-    while (true) {
-      stdout.write(bold('Allow? [y]es / [n]o / [s]kip / [o]nce: '));
-      final key = console.readKey();
-
-      // Echo the pressed key so the user can see what they chose.
-      final char = key.isControl ? '' : key.char;
-      stdout.writeln(char);
-
-      if (key.isControl) {
-        switch (key.controlChar) {
-          case ControlCharacter.ctrlC:
-            return false;
-          default:
-            continue;
-        }
-      }
-
-      switch (key.char.toLowerCase()) {
-        case 'y':
-        case 'o':
-          return true;
-        case 'n':
-        case 's':
-          return false;
-        default:
-          stdout.writeln(dim('  Press y, n, s, or o'));
-      }
-    }
+    final idx = PickerWidget.pick(
+      options: ['Approve', 'Deny'],
+      hints: ['allow this tool call', 'block this tool call'],
+      defaultIndex: 0,
+    );
+    return idx == 0;
   }
 
   /// High-risk requires typing "CONFIRM" — uses line input since raw-mode

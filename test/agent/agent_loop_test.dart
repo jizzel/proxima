@@ -155,8 +155,21 @@ class MockCallbacks implements AgentCallbacks {
   @override
   void onChunk(String text) => events.add('chunk: $text');
   @override
-  void onUsageReport(TokenUsage turn, TokenUsage cumulative) =>
-      events.add('usage: ${turn.totalTokens}');
+  void onUsageReport(
+    TokenUsage turn,
+    TokenUsage cumulative,
+    double turnCost,
+    double sessionCost,
+  ) => events.add('usage: ${turn.totalTokens}');
+  @override
+  void onToolExecuting(ToolCall toolCall) =>
+      events.add('executing: ${toolCall.tool}');
+  @override
+  void onIterationStart(int iteration, int maxIterations) =>
+      events.add('iteration: $iteration/$maxIterations');
+  @override
+  Future<int> onClarifyWithOptions(String question, List<String> options) =>
+      Future.value(0);
 }
 
 void main() {

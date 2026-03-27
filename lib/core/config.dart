@@ -122,6 +122,35 @@ class ProximaConfig {
     );
   }
 
+  /// Persists [model] as the default in the user config file (~/.proxima/config.yaml).
+  /// Creates the file and directory if they don't exist.
+  /// Other existing keys are preserved; only the `model` line is updated.
+  static Future<void> saveDefaultModel(String model) async {
+    final configPath = p.join(
+      Platform.environment['HOME'] ?? '',
+      '.proxima',
+      'config.yaml',
+    );
+    final file = File(configPath);
+    await file.parent.create(recursive: true);
+
+    String contents = '';
+    if (await file.exists()) {
+      contents = await file.readAsString();
+    }
+
+    // Replace or append the model key.
+    final modelLine = 'model: $model';
+    final modelRegex = RegExp(r'^model:.*$', multiLine: true);
+    if (modelRegex.hasMatch(contents)) {
+      contents = contents.replaceFirst(modelRegex, modelLine);
+    } else {
+      contents = contents.isEmpty ? '$modelLine\n' : '$contents\n$modelLine\n';
+    }
+
+    await file.writeAsString(contents);
+  }
+
   ProximaConfig copyWith({
     String? model,
     String? workingDir,

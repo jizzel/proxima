@@ -101,7 +101,8 @@ class FinalResponse extends LLMResponseBody {
 
 class ClarifyResponse extends LLMResponseBody {
   final String question;
-  ClarifyResponse(this.question);
+  final List<String> options;
+  ClarifyResponse(this.question, {this.options = const []});
 }
 
 class ErrorResponse extends LLMResponseBody {

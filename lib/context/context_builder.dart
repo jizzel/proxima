@@ -100,6 +100,11 @@ class ContextBuilder {
     buf.writeln(
       '7. After run_tests failures: read the failing test → read the implementation → patch → re-test. Maximum 3 fix/verify cycles.',
     );
+    buf.writeln(
+      '8. When asking a clarifying question with a fixed set of choices, use '
+      'type "clarify" with an "options" array: e.g. {"type":"clarify","question":"...","options":["A","B"]}. '
+      'The user will select from a picker — do not list options in the question text.',
+    );
     buf.writeln('');
 
     // C — Project context + session state
@@ -109,6 +114,48 @@ class ContextBuilder {
     );
     buf.writeln('');
     buf.writeln(projectIndex.toPromptText());
+
+    if (session.isPlanMode) {
+      buf.writeln('');
+      buf.writeln(
+        'PLAN MODE: research the codebase and produce a structured implementation plan.',
+      );
+      buf.writeln(
+        'Do NOT write, patch, execute code, or ask the user questions.',
+      );
+      buf.writeln('');
+      buf.writeln(
+        'Step 1 — Research: use read_file, search, search_symbol, glob, list_files.',
+      );
+      buf.writeln(
+        'Step 2 — Write plan: call write_plan once with the full plan in markdown.',
+      );
+      buf.writeln(
+        'Step 3 — Stop immediately: after write_plan succeeds, your ONLY allowed',
+      );
+      buf.writeln(
+        '  output is one sentence: "Plan written to .proxima/plan.md." Nothing else.',
+      );
+      buf.writeln('');
+      buf.writeln('The plan must include:');
+      buf.writeln('1. Context: what exists, what needs to change, and why');
+      buf.writeln(
+        '2. Step-by-step changes: exact files, methods, and logic (implementation-ready)',
+      );
+      buf.writeln(
+        '3. Tests: what new tests to write and what existing tests to update',
+      );
+      buf.writeln(
+        '4. Risks: edge cases, breaking changes, backwards-compatibility concerns',
+      );
+      buf.writeln('');
+      buf.writeln(
+        '!! STRICT RULE: After write_plan you MUST NOT list options, ask questions,',
+      );
+      buf.writeln(
+        '   offer to modify, confirm, or continue. Output exactly one sentence and stop.',
+      );
+    }
 
     return buf.toString();
   }

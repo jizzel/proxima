@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'package:dart_console/dart_console.dart';
 import '../core/types.dart';
 import '../core/session.dart';
 import 'ansi_helpers.dart';
+import 'picker_widget.dart';
 
 /// Renders task failure summaries and stuck dialogs.
 class TaskSummaryRenderer {
@@ -29,22 +29,13 @@ class TaskSummaryRenderer {
       stdout.writeln(dim('   → ${call.tool}(${call.args})'));
     }
     stdout.writeln('');
-    stdout.write(bold('   [a]bort or [c]ontinue? '));
-
-    final console = Console.scrolling();
-    while (true) {
-      final key = console.readKey();
-      if (key.char == 'a' || key.char == 'A') {
-        stdout.writeln('a');
-        stdout.writeln(dim('   Aborted.'));
-        return false;
-      }
-      if (key.char == 'c' || key.char == 'C') {
-        stdout.writeln('c');
-        stdout.writeln(dim('   Resuming...'));
-        return true;
-      }
-    }
+    final idx = PickerWidget.pick(
+      options: ['Continue', 'Abort'],
+      hints: ['let the agent try again', 'stop and return to prompt'],
+      defaultIndex: 1,
+    );
+    stdout.writeln('');
+    return idx == 0;
   }
 
   static void renderMaxIterations(int max) {

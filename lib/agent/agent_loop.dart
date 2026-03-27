@@ -41,6 +41,10 @@ abstract class AgentCallbacks {
   /// Called at the start of each loop iteration, after iterationCount is
   /// incremented. Use to show iteration context in the spinner.
   void onIterationStart(int iteration, int maxIterations);
+
+  /// Called when a clarify response includes a fixed option list.
+  /// Must return the index of the selected option. Blocks until user selects.
+  Future<int> onClarifyWithOptions(String question, List<String> options);
 }
 
 /// Stateless agent loop. All state lives in [ProximaSession].
@@ -142,6 +146,26 @@ class AgentLoop {
         );
         // Same: tokens already on screen when streamed.
         callbacks.onClarify(didStream ? '' : body.question);
+
+        if (body.options.isNotEmpty) {
+          final idx = await callbacks.onClarifyWithOptions(
+            body.question,
+            body.options,
+          );
+          final answer =
+              body.options[idx.clamp(0, body.options.length - 1)];
+          session.addMessage(
+            Message(role: MessageRole.user, content: answer),
+          );
+          callbacks.onUsageReport(
+            response.usage,
+            session.cumulativeUsage,
+            turnCost,
+            session.cumulativeCost,
+          );
+          continue; // stay in loop — answer injected, keep going
+        }
+
         callbacks.onUsageReport(
           response.usage,
           session.cumulativeUsage,

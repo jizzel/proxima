@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:io';
-import 'package:dart_console/dart_console.dart';
 import '../core/config.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
@@ -33,6 +33,7 @@ import '../agent/agent_loop.dart';
 import '../agent/subagent_runner.dart' show SubagentRunner;
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
+import '../renderer/picker_widget.dart';
 import 'arg_parser.dart';
 import 'readline.dart';
 import 'slash_commands.dart';
@@ -129,6 +130,13 @@ class ProximaRepl {
     if (_session.mode != _config.mode) {
       _permissionGate.mode = _session.mode;
     }
+
+    // Push initial status to renderer.
+    _renderer.updateStatus(
+      model: _activeModel,
+      mode: _session.mode,
+      planMode: _planMode,
+    );
 
     // Pre-fetch Ollama model list in background (non-fatal).
     _fetchOllamaModels();
@@ -274,6 +282,7 @@ class ProximaRepl {
         continue;
       }
 
+      final beforeTurn = DateTime.now();
       try {
         _session = await _getAgentLoop().runTurn(_session, trimmed, _renderer);
       } on LLMError catch (e) {
@@ -292,6 +301,9 @@ class ProximaRepl {
         continue;
       }
       _renderer.hideSpinner();
+
+      // If write_plan was called during this turn, show the approval picker.
+      await _maybeShowPlanPicker(beforeTurn);
 
       await _sessionStorage.save(_session);
 
@@ -381,6 +393,7 @@ class ProximaRepl {
     _contextWindow = _contextWindowForModel(model);
     // Carry forward the current mode so a prior /mode change is not lost.
     _session = ProximaSession.create(_config);
+    _renderer.updateStatus(model: model);
     _printCurrentHeader();
     // Persist the new default so future sessions start with this model.
     ProximaConfig.saveDefaultModel(model).catchError(
@@ -401,6 +414,7 @@ class ProximaRepl {
     _permissionGate.mode = mode;
     // Keep session in sync so the mode is persisted on save/resume.
     _session.mode = mode;
+    _renderer.updateStatus(mode: mode);
     _renderer.printSuccess('  Mode: ${mode.name}');
   }
 
@@ -420,80 +434,27 @@ class ProximaRepl {
   /// Arrow-key picker shown after the plan is displayed.
   /// Returns the user's decision. Defaults to [_PlanDecision.skip] on Escape/Ctrl-C.
   _PlanDecision _planApprovalPicker() {
-    const options = ['Execute', 'Edit', 'Skip'];
     const decisions = [
       _PlanDecision.execute,
       _PlanDecision.edit,
       _PlanDecision.skip,
     ];
-    const hints = [
-      'run the plan now',
-      'save to .proxima/plan.md and exit',
-      'discard and return to prompt',
-    ];
-
-    var selected = 0;
-    final console = Console.scrolling();
-
-    stdout.writeln(dim('  ↑/↓ select · Enter confirm'));
-    _renderPlanPicker(options, hints, selected, firstRender: true);
-
-    while (true) {
-      final key = console.readKey();
-      if (!key.isControl) continue;
-
-      switch (key.controlChar) {
-        case ControlCharacter.arrowUp:
-          if (selected > 0) {
-            selected--;
-            _renderPlanPicker(options, hints, selected);
-          }
-        case ControlCharacter.arrowDown:
-          if (selected < options.length - 1) {
-            selected++;
-            _renderPlanPicker(options, hints, selected);
-          }
-        case ControlCharacter.enter:
-          _clearPlanPicker(console, options.length + 1);
-          return decisions[selected];
-        case ControlCharacter.escape:
-        case ControlCharacter.ctrlC:
-          _clearPlanPicker(console, options.length + 1);
-          return _PlanDecision.skip;
-        default:
-          break;
-      }
-    }
-  }
-
-  void _renderPlanPicker(
-    List<String> options,
-    List<String> hints,
-    int selected, {
-    bool firstRender = false,
-  }) {
-    if (!firstRender) {
-      stdout.write('\x1b[${options.length}A');
-    }
-    for (var i = 0; i < options.length; i++) {
-      final hint = dim('  ${hints[i]}');
-      if (i == selected) {
-        stdout.write('\r\x1b[K\x1b[7m  ▶ ${options[i]}\x1b[0m$hint\n');
-      } else {
-        stdout.write('\r\x1b[K     ${dim(options[i])}$hint\n');
-      }
-    }
-  }
-
-  void _clearPlanPicker(Console console, int lineCount) {
-    for (var i = 0; i < lineCount; i++) {
-      console.cursorUp();
-      console.eraseLine();
-    }
+    stdout.writeln(dim('  Plan written to .proxima/plan.md'));
+    final idx = PickerWidget.pick(
+      options: ['Execute', 'Edit', 'Skip'],
+      hints: [
+        'run the plan now',
+        'edit .proxima/plan.md, then run /execute',
+        'discard and return to prompt',
+      ],
+      defaultIndex: 0,
+    );
+    return decisions[idx];
   }
 
   void _togglePlanMode() {
     _planMode = !_planMode;
+    _renderer.updateStatus(planMode: _planMode);
     if (_planMode) {
       _renderer.printSuccess('  Plan mode  ON   ❯ [plan]');
       _renderer.printDim('  Every prompt researches + asks approval before writing.');
@@ -519,18 +480,20 @@ class ProximaRepl {
   /// after returning by scheduling via the event loop.
   void _dispatchPlan(String task) {
     if (task == '__execute__') {
-      _handleExecutePlan();
+      unawaited(_handleExecutePlan());
     } else {
-      _runPlan(task);
+      unawaited(_runPlan(task));
     }
   }
 
   Future<void> _runPlan(String task) async {
     // 1. Run agent in safe mode with plan mode flag set.
+    // The renderer drives the spinner via onIterationStart — no manual
+    // showSpinner needed here.
     final planConfig = _config.copyWith(mode: SessionMode.safe);
     var planSession = ProximaSession.create(planConfig, isPlanMode: true);
 
-    _renderer.showSpinner('Researching…');
+    final beforeTurn = DateTime.now();
     try {
       planSession = await _getAgentLoop().runTurn(planSession, task, _renderer);
     } catch (e) {
@@ -540,14 +503,31 @@ class ProximaRepl {
     }
     _renderer.hideSpinner();
 
-    // 2. Check if .proxima/plan.md was written.
+    // 2. Check if .proxima/plan.md was written and show approval picker.
+    await _maybeShowPlanPicker(beforeTurn, requirePlan: true);
+  }
+
+  /// If `.proxima/plan.md` was written at or after [since], show the plan
+  /// content and the approval picker. When [requirePlan] is true and the file
+  /// doesn't exist, print an error.
+  Future<void> _maybeShowPlanPicker(
+    DateTime since, {
+    bool requirePlan = false,
+  }) async {
     final planFile = File(p.join(_config.workingDir, '.proxima', 'plan.md'));
+
     if (!await planFile.exists()) {
-      _renderer.printError(
-        '  Plan was not produced. Try again with more detail.',
-      );
+      if (requirePlan) {
+        _renderer.printError(
+          '  Plan was not produced. Try again with more detail.',
+        );
+      }
       return;
     }
+
+    // Only show picker if the file was written during this turn.
+    final modified = await planFile.lastModified();
+    if (modified.isBefore(since)) return;
 
     // 3. Show plan and prompt for approval via arrow-key picker.
     final planText = await planFile.readAsString();
@@ -573,7 +553,6 @@ class ProximaRepl {
 
     // 4. Execute: new normal session running the plan.
     _session = ProximaSession.create(_config);
-    _renderer.showSpinner('Executing…');
     try {
       _session = await _getAgentLoop().runTurn(
         _session,

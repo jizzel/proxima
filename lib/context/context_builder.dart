@@ -100,6 +100,11 @@ class ContextBuilder {
     buf.writeln(
       '7. After run_tests failures: read the failing test → read the implementation → patch → re-test. Maximum 3 fix/verify cycles.',
     );
+    buf.writeln(
+      '8. When asking a clarifying question with a fixed set of choices, use '
+      'type "clarify" with an "options" array: e.g. {"type":"clarify","question":"...","options":["A","B"]}. '
+      'The user will select from a picker — do not list options in the question text.',
+    );
     buf.writeln('');
 
     // C — Project context + session state
@@ -126,10 +131,10 @@ class ContextBuilder {
         'Step 2 — Write plan: call write_plan once with the full plan in markdown.',
       );
       buf.writeln(
-        'Step 3 — Stop: after write_plan succeeds, emit a final response that says',
+        'Step 3 — Stop: after write_plan succeeds, emit a brief final response',
       );
       buf.writeln(
-        '  exactly "Plan written to .proxima/plan.md" and nothing else.',
+        '  confirming the plan was written. Do not offer options or ask questions.',
       );
       buf.writeln('');
       buf.writeln('The plan must include:');
@@ -145,10 +150,10 @@ class ContextBuilder {
       );
       buf.writeln('');
       buf.writeln(
-        'IMPORTANT: Do not present options, ask for approval, or produce any text',
+        'IMPORTANT: After write_plan, do not present numbered options, ask for',
       );
       buf.writeln(
-        'other than "Plan written to .proxima/plan.md" after calling write_plan.',
+        'approval, or offer to modify the plan. The user decides what to do next.',
       );
     }
 

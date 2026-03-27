@@ -125,6 +125,9 @@ class MockCallbacks implements AgentCallbacks {
   @override
   void onIterationStart(int iteration, int maxIterations) =>
       events.add('iteration: $iteration/$maxIterations');
+  @override
+  Future<int> onClarifyWithOptions(String question, List<String> options) =>
+      Future.value(0);
 }
 
 void main() {

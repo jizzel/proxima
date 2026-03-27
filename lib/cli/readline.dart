@@ -38,6 +38,7 @@ class ReadLine {
 
   /// Public alias used by callers to check for the plan-mode toggle sentinel.
   static const shiftTabSentinel = _kShiftTabSentinel;
+
   // How many lines below the input line are currently occupied by the panel.
   // 0 = no panel painted. Includes the separator line.
   int _panelHeight = 0;
@@ -233,8 +234,12 @@ class ReadLine {
       }
 
       // ── Shift+Tab — toggle plan mode ─────────────────────────────────────────
-      // Terminal sends ESC [ Z for Shift+Tab (standard VT100/xterm).
-      if (!key.isControl && key.char == '\x1b[Z') {
+      // Terminals send ESC [ Z (backtab) for Shift+Tab. dart_console delivers
+      // unrecognised escape sequences through the printable-char path with the
+      // raw bytes in key.char. Match both the full sequence and the suffix
+      // variant to cover xterm/VTE differences.
+      if (!key.isControl &&
+          (key.char == '\x1b[Z' || key.char.endsWith('[Z'))) {
         _erasePanel();
         onShiftTab?.call();
         // Return a sentinel that the REPL interprets as a mode toggle (no

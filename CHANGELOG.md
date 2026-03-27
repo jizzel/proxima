@@ -24,7 +24,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Static `showSpinner('Thinking...')` calls removed from `repl.dart`; spinner is now driven entirely by `onIterationStart`
 
 #### Plan Mode
-- `/plan <task>` slash command — runs the agent in `SessionMode.safe` with `isPlanMode: true`, produces `.proxima/plan.md`, then shows a `y/N` approval prompt before executing
+- `/plan <task>` slash command — runs the agent in `SessionMode.safe` with `isPlanMode: true`, produces `.proxima/plan.md`, then shows an arrow-key picker (Execute / Edit / Skip) before executing
 - `/execute` slash command — executes the saved plan in `.proxima/plan.md` without re-running the research phase
 - `/cost` slash command — shows current session cost and a cost table for the 10 most recent sessions
 - **Shift+Tab plan-mode toggle** — press Shift+Tab at the prompt to toggle plan mode on/off without typing `/plan`; the prompt changes to `❯ [plan]`; toggles print a green `Plan mode ON/OFF` notice (same style as `/mode` switches) plus a dim one-line description; slash commands continue to work normally inside plan mode
@@ -48,6 +48,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 #### Search
 - `search_symbol` tool (`lib/tools/search/search_symbol_tool.dart`) — searches for symbol definitions (class, function, variable, any) using regex across the working directory; supports `path` scoping and `kind` filtering; rejects path traversal
+
+### Fixed
+- **Plan mode agent offered numbered options menu instead of stopping** — system prompt now explicitly forbids presenting options or asking for approval after `write_plan`; instructs the agent to emit a brief confirmation and stop
+- **`onFinalResponse` printed a spurious blank line during streaming** — when streaming was active, `text` is `''`; the renderer now skips `writeln('')` + `_renderMarkdown('')` when text is empty, avoiding a double blank line above the closing separator
+- **`_dispatchPlan` silently discarded async results** — `_runPlan()` and `_handleExecutePlan()` are now wrapped with `unawaited()` making the fire-and-forget intent explicit
+- **Redundant `Researching…` spinner in `_runPlan`** — removed manual `showSpinner`/`hideSpinner` calls; the renderer drives the spinner correctly via `onIterationStart`
+- **Plan approval picker `Edit` hint was misleading** — said "save to .proxima/plan.md" (plan is already saved at that point); corrected to "edit .proxima/plan.md, then run /execute"
+- **Shift+Tab detection used exact byte match only** — added `endsWith('[Z')` guard to cover terminal emulators that deliver the sequence with a prefix variation
 
 ---
 

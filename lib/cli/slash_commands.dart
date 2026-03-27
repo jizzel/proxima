@@ -9,6 +9,7 @@ import '../core/types.dart';
 import '../providers/ollama_provider.dart';
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
+import '../renderer/picker_widget.dart';
 import '../tools/tool_registry.dart';
 
 /// Handles /commands typed in the REPL.
@@ -309,7 +310,28 @@ Slash commands:
     void Function(SessionMode mode)? onModeSwitch,
   ) {
     if (arg.isEmpty) {
-      _renderer.printDim('  mode: ${session.mode.name}');
+      if (!stdout.hasTerminal) {
+        _renderer.printDim('  mode: ${session.mode.name}');
+        return;
+      }
+      const modes = [SessionMode.safe, SessionMode.confirm, SessionMode.auto];
+      const labels = ['safe', 'confirm', 'auto'];
+      const hints = [
+        'read-only, no writes or commands',
+        'approve before writes/commands (default)',
+        'agent acts without asking',
+      ];
+      final currentIdx = modes.indexOf(session.mode).clamp(0, 2);
+      final idx = PickerWidget.pick(
+        options: labels,
+        hints: hints,
+        defaultIndex: currentIdx,
+      );
+      final chosen = modes[idx];
+      if (chosen != session.mode) {
+        session.mode = chosen;
+        onModeSwitch?.call(chosen);
+      }
       return;
     }
     final mode = switch (arg) {

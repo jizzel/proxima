@@ -57,14 +57,18 @@ class SchemaValidator {
   }
 
   static ClarifyResponse _validateClarify(Map<String, dynamic> json) {
-    final question = json['question'];
-    if (question == null || question is! String) {
+    final question = json['question'] as String? ?? '';
+    if (question.isEmpty) {
       throw SchemaViolation(
         'clarify response missing "question" field.',
         raw: json,
       );
     }
-    return ClarifyResponse(question);
+    final rawOptions = json['options'];
+    final options = rawOptions is List
+        ? rawOptions.whereType<String>().toList()
+        : const <String>[];
+    return ClarifyResponse(question, options: options);
   }
 
   static ErrorResponse _validateError(Map<String, dynamic> json) {

@@ -5,6 +5,7 @@ import '../agent/subagent_runner.dart' show CriticResult;
 import '../core/cost_calculator.dart';
 import '../core/types.dart';
 import 'ansi_helpers.dart';
+import 'picker_widget.dart';
 import 'spinner.dart';
 import 'permission_prompt.dart';
 import 'repl_header.dart';
@@ -28,7 +29,18 @@ class Renderer implements AgentCallbacks {
   // ── Turn timing ──────────────────────────────────────────────────────────
   DateTime? _turnStartTime;
 
+  // ── Status line state ────────────────────────────────────────────────────
+  String _statusModel = '';
+  SessionMode _statusMode = SessionMode.confirm;
+  bool _statusPlanMode = false;
+
   Renderer({bool debug = false}) : _debug = debug;
+
+  void updateStatus({String? model, SessionMode? mode, bool? planMode}) {
+    if (model != null) _statusModel = model;
+    if (mode != null) _statusMode = mode;
+    if (planMode != null) _statusPlanMode = planMode;
+  }
 
   void printHeader({
     required String model,
@@ -111,8 +123,12 @@ class Renderer implements AgentCallbacks {
   void onFinalResponse(String text) {
     _streamingStarted = false;
     hideSpinner();
-    stdout.writeln('');
-    stdout.writeln(_renderMarkdown(text));
+    // When streaming was active, text is empty — tokens are already on screen.
+    // Avoid printing a blank line + empty markdown in that case.
+    if (text.isNotEmpty) {
+      stdout.writeln('');
+      stdout.writeln(_renderMarkdown(text));
+    }
     // Dim rule to visually close the turn.
     try {
       final w = stdout.terminalColumns.clamp(20, 80);
@@ -126,6 +142,15 @@ class Renderer implements AgentCallbacks {
     stdout.writeln('');
     stdout.writeln('  ${cyan("?")} $question');
     stdout.writeln('');
+  }
+
+  @override
+  Future<int> onClarifyWithOptions(
+    String question,
+    List<String> options,
+  ) async {
+    // question already printed by onClarify; just show the picker.
+    return PickerWidget.pick(options: options);
   }
 
   @override
@@ -169,6 +194,18 @@ class Renderer implements AgentCallbacks {
         '  ↑${turn.inputTokens} ↓${turn.outputTokens}  total: ${cumulative.totalTokens}$timePart$costPart',
       ),
     );
+    _printStatusLine();
+  }
+
+  void _printStatusLine() {
+    if (_statusModel.isEmpty) return;
+    final modelLabel = _statusModel.contains('/')
+        ? _statusModel.substring(_statusModel.indexOf('/') + 1)
+        : _statusModel;
+    final modeLabel =
+        _statusMode == SessionMode.confirm ? '' : '  mode: ${_statusMode.name}';
+    final planLabel = _statusPlanMode ? '  [plan]' : '';
+    stdout.writeln(dim('  model: $modelLabel$modeLabel$planLabel'));
   }
 
   @override

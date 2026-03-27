@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `/model <name>` now persists the selected model as `model:` in `~/.proxima/config.yaml` — future sessions start with the last chosen model without needing `--model` or re-selecting via `/model`
+- `ProximaConfig.saveDefaultModel(model)` static helper — creates `~/.proxima/config.yaml` (and parent directory) if absent; replaces existing `model:` line in-place, leaving all other keys untouched
+
 ---
 
 ## [1.0.1] — 2026-03-26

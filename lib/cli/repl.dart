@@ -355,11 +355,16 @@ class ProximaRepl {
 
   void _switchModel(String model) {
     _activeModel = model;
+    _config = _config.copyWith(model: model);
     _agentLoop = null; // force re-creation with new provider on next call
     _contextWindow = _contextWindowForModel(model);
     // Carry forward the current mode so a prior /mode change is not lost.
-    _session = ProximaSession.create(_config.copyWith(model: model));
+    _session = ProximaSession.create(_config);
     _printCurrentHeader();
+    // Persist the new default so future sessions start with this model.
+    ProximaConfig.saveDefaultModel(model).catchError(
+      (e) => _renderer.printDim('  Warning: could not save default model: $e'),
+    );
   }
 
   /// Returns the known context window for [model] without creating a provider

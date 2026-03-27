@@ -65,7 +65,9 @@ void main() {
     test('replaces existing model key without touching other keys', () async {
       final file = File(configPath);
       await file.parent.create(recursive: true);
-      await file.writeAsString('debug: false\nmodel: anthropic/old-model\nmax_iterations: 5\n');
+      await file.writeAsString(
+        'debug: false\nmodel: anthropic/old-model\nmax_iterations: 5\n',
+      );
 
       String contents = await file.readAsString();
       const newModel = 'ollama/mistral';

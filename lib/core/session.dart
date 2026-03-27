@@ -108,12 +108,17 @@ class ProximaSession {
   final List<TaskRecord> taskHistory;
   SessionPermissions permissions;
   TokenUsage cumulativeUsage;
+  double cumulativeCost;
   int iterationCount;
   TaskStatus status;
 
   /// Cache of file contents read this session. Key: canonical path.
   /// Used by compaction to deduplicate repeated `read_file` tool results.
   final Map<String, String> fileCache;
+
+  /// Runtime-only flag — not persisted. True when running in plan mode
+  /// (agent researches and writes .proxima/plan.md before executing).
+  bool isPlanMode;
 
   ProximaSession({
     required this.id,
@@ -126,16 +131,22 @@ class ProximaSession {
     List<TaskRecord>? taskHistory,
     SessionPermissions? permissions,
     TokenUsage? cumulativeUsage,
+    double? cumulativeCost,
     Map<String, String>? fileCache,
     this.iterationCount = 0,
     this.status = TaskStatus.running,
+    this.isPlanMode = false,
   }) : history = history ?? [],
        taskHistory = taskHistory ?? [],
        permissions = permissions ?? const SessionPermissions(),
        cumulativeUsage = cumulativeUsage ?? TokenUsage.zero,
+       cumulativeCost = cumulativeCost ?? 0.0,
        fileCache = fileCache ?? {};
 
-  factory ProximaSession.create(ProximaConfig config) {
+  factory ProximaSession.create(
+    ProximaConfig config, {
+    bool isPlanMode = false,
+  }) {
     final now = DateTime.now();
     return ProximaSession(
       id: _generateId(now),
@@ -144,6 +155,7 @@ class ProximaSession {
       workingDir: config.workingDir,
       model: config.model,
       mode: config.mode,
+      isPlanMode: isPlanMode,
     );
   }
 
@@ -168,6 +180,11 @@ class ProximaSession {
     updatedAt = DateTime.now();
   }
 
+  void recordCost(double cost) {
+    cumulativeCost += cost;
+    updatedAt = DateTime.now();
+  }
+
   /// Find the most recent backup for a given file path (for undo).
   String? findBackup(String filePath) {
     return taskHistory.reversed
@@ -188,6 +205,7 @@ class ProximaSession {
     'task_history': taskHistory.map((r) => r.toJson()).toList(),
     'permissions': permissions.toJson(),
     'cumulative_usage': cumulativeUsage.toJson(),
+    'cumulative_cost': cumulativeCost,
     'iteration_count': iterationCount,
     'status': status.name,
   };
@@ -221,6 +239,7 @@ class ProximaSession {
             Map<String, dynamic>.from(json['cumulative_usage'] as Map),
           )
         : TokenUsage.zero,
+    cumulativeCost: (json['cumulative_cost'] as num?)?.toDouble() ?? 0.0,
     iterationCount: json['iteration_count'] as int? ?? 0,
     status: TaskStatus.values.byName(json['status'] as String? ?? 'running'),
   );

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
 import '../context/token_budget.dart';
+import '../core/cost_calculator.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
 import '../core/types.dart';
@@ -32,6 +33,7 @@ class SlashCommandHandler {
     ToolRegistry? toolRegistry,
     void Function(String dir)? onDirSwitch,
     SessionStorage? sessionStorage,
+    void Function(String task)? onPlanApproved,
   }) async {
     final trimmed = input.trim();
     if (!trimmed.startsWith('/')) return false;
@@ -97,6 +99,16 @@ class SlashCommandHandler {
         }
       case '/snapshot':
         await _handleSnapshot(session, sessionStorage);
+      case '/cost':
+        await _printCost(session, sessionStorage);
+      case '/plan':
+        if (rest.isEmpty) {
+          _renderer.printError('  Usage: /plan <task description>');
+        } else {
+          await _handlePlan(rest, onPlanApproved);
+        }
+      case '/execute':
+        await _handleExecute(onPlanApproved);
       default:
         _renderer.printDim(
           'Unknown command: $command. Type /help for commands.',
@@ -285,6 +297,9 @@ Slash commands:
   /dir <path>        Switch working directory
   /ignore <pattern>  Exclude a glob pattern from context
   /snapshot          Save a session snapshot
+  /cost              Show session and recent session costs
+  /plan <task>       Research codebase and produce a plan before executing
+  /execute           Execute the saved plan in .proxima/plan.md
 ''');
   }
 
@@ -360,6 +375,9 @@ Slash commands:
       'Tokens',
       '↑${session.cumulativeUsage.inputTokens} ↓${session.cumulativeUsage.outputTokens}',
     );
+    if (session.cumulativeCost > 0) {
+      row('Cost', CostCalculator.format(session.cumulativeCost));
+    }
     _renderer.print('');
   }
 
@@ -540,5 +558,58 @@ Slash commands:
     }
     _renderer.printSuccess('Snapshot saved: ${session.id}');
     _renderer.printDim('Resume with: proxima --resume ${session.id}');
+  }
+
+  Future<void> _printCost(
+    ProximaSession session,
+    SessionStorage? sessionStorage,
+  ) async {
+    _renderer.print('');
+    _renderer.print(
+      '  Session cost: ${CostCalculator.format(session.cumulativeCost)}',
+    );
+    if (sessionStorage != null) {
+      try {
+        final ids = await sessionStorage.listSessionIds();
+        final recent = ids.reversed.take(10).toList();
+        if (recent.length > 1) {
+          _renderer.print('');
+          _renderer.print('  Recent sessions:');
+          double total = 0;
+          for (final id in recent) {
+            final s = await sessionStorage.load(id);
+            if (s == null) continue;
+            total += s.cumulativeCost;
+            final marker = id == session.id ? '  ◀ current' : '';
+            _renderer.printDim(
+              '    ${id.padRight(28)} ${CostCalculator.format(s.cumulativeCost)}$marker',
+            );
+          }
+          _renderer.print('');
+          _renderer.print(
+            '  Total (last ${recent.length}): ${CostCalculator.format(total)}',
+          );
+        }
+      } catch (_) {}
+    }
+    _renderer.print('');
+  }
+
+  Future<void> _handlePlan(
+    String task,
+    void Function(String task)? onPlanApproved,
+  ) async {
+    _renderer.print('');
+    _renderer.printDim('  Planning: $task');
+    _renderer.printDim('  (safe mode — no writes until you approve)');
+    _renderer.print('');
+    onPlanApproved?.call(task);
+  }
+
+  Future<void> _handleExecute(
+    void Function(String task)? onPlanApproved,
+  ) async {
+    // Signal to the REPL to run the saved plan.
+    onPlanApproved?.call('__execute__');
   }
 }

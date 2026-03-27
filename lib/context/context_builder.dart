@@ -110,6 +110,39 @@ class ContextBuilder {
     buf.writeln('');
     buf.writeln(projectIndex.toPromptText());
 
+    if (session.isPlanMode) {
+      buf.writeln('');
+      buf.writeln(
+        'You are in PLAN MODE. Your task is to research the codebase and produce a structured',
+      );
+      buf.writeln(
+        'implementation plan — do NOT write, patch, or execute any code yet.',
+      );
+      buf.writeln('');
+      buf.writeln(
+        'Use read_file, search, search_symbol, glob, and list_files to understand the codebase.',
+      );
+      buf.writeln(
+        'When you have a complete picture, call write_plan with the full plan in markdown format.',
+      );
+      buf.writeln('');
+      buf.writeln('Your plan must include:');
+      buf.writeln('1. Context: what exists, what needs to change, and why');
+      buf.writeln(
+        '2. Step-by-step changes: exact files, methods, and logic (implementation-ready)',
+      );
+      buf.writeln(
+        '3. Tests: what new tests to write and what existing tests to update',
+      );
+      buf.writeln(
+        '4. Risks: edge cases, breaking changes, backwards-compatibility concerns',
+      );
+      buf.writeln('');
+      buf.writeln(
+        'Be specific enough that the plan can be executed without any additional research.',
+      );
+    }
+
     return buf.toString();
   }
 }

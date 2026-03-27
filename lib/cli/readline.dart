@@ -31,6 +31,13 @@ class ReadLine {
 
   static const _maxSuggestions = 6;
   static const _maxPersistedHistory = 500;
+
+  /// Sentinel returned by [readLine] when Shift+Tab is pressed, indicating a
+  /// plan-mode toggle rather than actual submitted input.
+  static const _kShiftTabSentinel = '\x00__shift_tab__';
+
+  /// Public alias used by callers to check for the plan-mode toggle sentinel.
+  static const shiftTabSentinel = _kShiftTabSentinel;
   // How many lines below the input line are currently occupied by the panel.
   // 0 = no panel painted. Includes the separator line.
   int _panelHeight = 0;
@@ -83,6 +90,7 @@ class ReadLine {
     String prompt = '',
     List<String> Function(String buffer)? completer,
     bool cancelOnBreak = true,
+    void Function()? onShiftTab,
   }) {
     var buffer = '';
     var cursorPos = 0;
@@ -222,6 +230,16 @@ class ReadLine {
           savedBuffer = null;
         }
         continue;
+      }
+
+      // ── Shift+Tab — toggle plan mode ─────────────────────────────────────────
+      // Terminal sends ESC [ Z for Shift+Tab (standard VT100/xterm).
+      if (!key.isControl && key.char == '\x1b[Z') {
+        _erasePanel();
+        onShiftTab?.call();
+        // Return a sentinel that the REPL interprets as a mode toggle (no
+        // actual input submitted — the REPL will re-prompt immediately).
+        return _kShiftTabSentinel;
       }
 
       // ── Edit control keys ───────────────────────────────────────────────────

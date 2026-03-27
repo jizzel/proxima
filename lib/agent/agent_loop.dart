@@ -2,6 +2,7 @@ import 'dart:async';
 import '../core/types.dart';
 import '../core/session.dart';
 import '../core/config.dart';
+import '../core/cost_calculator.dart';
 import '../providers/provider_interface.dart';
 import '../tools/tool_interface.dart';
 import '../tools/tool_registry.dart';
@@ -25,8 +26,21 @@ abstract class AgentCallbacks {
   Future<bool> onStuck(List<ToolCall> recentCalls);
   void onChunk(String text);
 
-  /// Called with token usage after every completed turn.
-  void onUsageReport(TokenUsage turnUsage, TokenUsage cumulative);
+  /// Called with token usage and cost after every completed turn.
+  void onUsageReport(
+    TokenUsage turnUsage,
+    TokenUsage cumulative,
+    double turnCost,
+    double sessionCost,
+  );
+
+  /// Called immediately before tool.execute() (or dryRun()), after permission
+  /// is granted. Fires once per tool call, just before execution begins.
+  void onToolExecuting(ToolCall toolCall);
+
+  /// Called at the start of each loop iteration, after iterationCount is
+  /// incremented. Use to show iteration context in the spinner.
+  void onIterationStart(int iteration, int maxIterations);
 }
 
 /// Stateless agent loop. All state lives in [ProximaSession].
@@ -70,6 +84,7 @@ class AgentLoop {
 
     while (session.iterationCount < _config.maxIterations) {
       session.iterationCount++;
+      callbacks.onIterationStart(session.iterationCount, _config.maxIterations);
 
       // Build context-aware request.
       final request = await _contextBuilder.build(session, projectIndex);
@@ -95,8 +110,10 @@ class AgentLoop {
         return session;
       }
 
-      // Record token usage.
+      // Record token usage and cost.
       session.recordUsage(response.usage);
+      final turnCost = CostCalculator.compute(_config.model, response.usage);
+      session.recordCost(turnCost);
 
       // Handle response body.
       final body = response.body;
@@ -109,7 +126,12 @@ class AgentLoop {
         // the renderer only emits the closing separator, not the full text again.
         callbacks.onFinalResponse(didStream ? '' : body.text);
         // Usage printed after separator so it appears below the response.
-        callbacks.onUsageReport(response.usage, session.cumulativeUsage);
+        callbacks.onUsageReport(
+          response.usage,
+          session.cumulativeUsage,
+          turnCost,
+          session.cumulativeCost,
+        );
         session.status = TaskStatus.completed;
         return session;
       }
@@ -120,7 +142,12 @@ class AgentLoop {
         );
         // Same: tokens already on screen when streamed.
         callbacks.onClarify(didStream ? '' : body.question);
-        callbacks.onUsageReport(response.usage, session.cumulativeUsage);
+        callbacks.onUsageReport(
+          response.usage,
+          session.cumulativeUsage,
+          turnCost,
+          session.cumulativeCost,
+        );
         // Wait for next turn with user's answer.
         return session;
       }
@@ -215,6 +242,7 @@ class AgentLoop {
             delegationFailed = true;
           } else {
             delegationCount++;
+            callbacks.onToolExecuting(toolCall);
             final runner = SubagentRunner(provider: _provider);
             final result = await runner.run(
               agentTypeStr: toolCall.args['agent'] as String? ?? '',
@@ -223,6 +251,9 @@ class AgentLoop {
               model: session.model,
             );
             session.recordUsage(result.usage);
+            session.recordCost(
+              CostCalculator.compute(_config.model, result.usage),
+            );
             delegationFailed = result.isError;
             subagentResult = result.isError
                 ? 'Subagent error: ${result.errorMessage}'
@@ -313,6 +344,8 @@ class AgentLoop {
           callbacks.onToolResult(toolCall.tool, errorMsg, true);
           continue;
         }
+
+        callbacks.onToolExecuting(toolCall);
 
         String toolResult;
         bool isError = false;

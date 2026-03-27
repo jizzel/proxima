@@ -63,5 +63,39 @@ void main() {
       session.permissions = session.permissions.withAllowedTool('read_file');
       expect(session.permissions.allowedTools, contains('read_file'));
     });
+
+    test('recordCost accumulates', () {
+      final session = ProximaSession.create(config);
+      session.recordCost(0.001);
+      session.recordCost(0.002);
+      expect(session.cumulativeCost, closeTo(0.003, 0.000001));
+    });
+
+    test('toJson includes cumulative_cost', () {
+      final session = ProximaSession.create(config);
+      session.recordCost(1.5);
+      final json = jsonDecode(session.toJsonString()) as Map<String, dynamic>;
+      expect(json.containsKey('cumulative_cost'), isTrue);
+      expect(
+        (json['cumulative_cost'] as num).toDouble(),
+        closeTo(1.5, 0.000001),
+      );
+    });
+
+    test('fromJson missing cumulative_cost defaults to 0.0', () {
+      final session = ProximaSession.create(config);
+      final json = jsonDecode(session.toJsonString()) as Map<String, dynamic>;
+      json.remove('cumulative_cost');
+      final restored = ProximaSession.fromJson(json);
+      expect(restored.cumulativeCost, 0.0);
+    });
+
+    test('JSON round-trip preserves cumulative_cost', () {
+      final session = ProximaSession.create(config);
+      session.recordCost(0.0042);
+      final json = jsonDecode(session.toJsonString()) as Map<String, dynamic>;
+      final restored = ProximaSession.fromJson(json);
+      expect(restored.cumulativeCost, closeTo(0.0042, 0.000001));
+    });
   });
 }

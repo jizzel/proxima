@@ -13,6 +13,8 @@ import '../tools/file/patch_file_tool.dart';
 import '../tools/file/list_files_tool.dart';
 import '../tools/file/glob_tool.dart';
 import '../tools/search/search_tool.dart';
+import '../tools/search/search_symbol_tool.dart';
+import '../tools/agent/write_plan_tool.dart';
 import '../tools/shell/run_command_tool.dart';
 import '../tools/shell/run_tests_tool.dart';
 import '../tools/git/git_status_tool.dart';
@@ -33,6 +35,7 @@ import '../renderer/ansi_helpers.dart';
 import 'arg_parser.dart';
 import 'readline.dart';
 import 'slash_commands.dart';
+import 'package:path/path.dart' as p;
 
 /// Main REPL loop integrating all layers.
 class ProximaRepl {
@@ -55,6 +58,7 @@ class ProximaRepl {
   int _contextWindow = 128000;
 
   bool _running = true;
+  bool _planMode = false;
   late final ReadLine _readline;
 
   /// Ollama model list, fetched once at startup (best-effort).
@@ -179,6 +183,7 @@ class ProximaRepl {
     registry.register(ListFilesTool());
     registry.register(GlobTool());
     registry.register(SearchTool());
+    registry.register(SearchSymbolTool());
     registry.register(RunCommandTool());
     registry.register(RunTestsTool());
     // Git tools — safe reads
@@ -192,12 +197,12 @@ class ProximaRepl {
     registry.register(GitResetTool());
     // Agent tools
     registry.register(DelegateToSubagentTool());
+    registry.register(WritePlanTool());
     return registry;
   }
 
   /// Run one-shot --task mode.
   Future<void> runTask(String task) async {
-    _renderer.showSpinner('Thinking...');
     try {
       _session = await _getAgentLoop().runTurn(_session, task, _renderer);
     } on LLMError catch (e) {
@@ -226,12 +231,16 @@ class ProximaRepl {
       final input = _readline.readLine(
         prompt: _promptString(),
         completer: _completer,
+        onShiftTab: _togglePlanMode,
       );
 
       if (input == null) {
         // EOF or Ctrl-C — exit gracefully.
         break;
       }
+
+      // Shift+Tab was pressed — mode toggled, re-prompt.
+      if (input == ReadLine.shiftTabSentinel) continue;
 
       final trimmed = input.trim();
       if (trimmed.isEmpty) continue;
@@ -250,12 +259,18 @@ class ProximaRepl {
         toolRegistry: _toolRegistry,
         onDirSwitch: (dir) => _switchDir(dir),
         sessionStorage: _sessionStorage,
+        onPlanApproved: (task) => _dispatchPlan(task),
       );
 
       if (wasCommand) continue;
       if (!_running) break;
 
-      _renderer.showSpinner('Thinking...');
+      // In plan mode, every prompt is treated as a /plan task.
+      if (_planMode) {
+        await _runPlan(trimmed);
+        continue;
+      }
+
       try {
         _session = await _getAgentLoop().runTurn(_session, trimmed, _renderer);
       } on LLMError catch (e) {
@@ -313,6 +328,9 @@ class ProximaRepl {
         '/dir',
         '/ignore',
         '/snapshot',
+        '/cost',
+        '/plan',
+        '/execute',
       ];
       // Only show suggestions once at least one char after '/' is typed.
       if (buffer.length < 2) return [];
@@ -396,13 +414,121 @@ class ProximaRepl {
     _renderer.printSuccess('  Working dir: $dir');
   }
 
+  void _togglePlanMode() {
+    _planMode = !_planMode;
+    if (_planMode) {
+      _renderer.printSuccess('  Plan mode  ON   ❯ [plan]');
+      _renderer.printDim('  Every prompt researches + asks approval before writing.');
+    } else {
+      _renderer.printSuccess('  Plan mode  OFF  ❯');
+      _renderer.printDim('  Back to normal — prompts go straight to the agent.');
+    }
+  }
+
   String _promptString() {
     final modeTag = switch (_config.mode) {
       SessionMode.auto => yellow(' auto'),
       SessionMode.safe => green(' safe'),
       SessionMode.confirm => '',
     };
-    // Colored prompt: "  ❯ " in cyan, mode tag if set.
-    return '\n${cyan(' ❯')}$modeTag ';
+    final planTag = _planMode ? cyan(' [plan]') : '';
+    // Colored prompt: "  ❯ " in cyan, mode/plan tags if set.
+    return '\n${cyan(' ❯')}$modeTag$planTag ';
+  }
+
+  /// Dispatches /plan and /execute tasks without blocking the REPL loop.
+  /// Called synchronously from the slash command callback; runs async work
+  /// after returning by scheduling via the event loop.
+  void _dispatchPlan(String task) {
+    if (task == '__execute__') {
+      _handleExecutePlan();
+    } else {
+      _runPlan(task);
+    }
+  }
+
+  Future<void> _runPlan(String task) async {
+    // 1. Run agent in safe mode with plan mode flag set.
+    final planConfig = _config.copyWith(mode: SessionMode.safe);
+    var planSession = ProximaSession.create(planConfig, isPlanMode: true);
+
+    _renderer.showSpinner('Researching…');
+    try {
+      planSession = await _getAgentLoop().runTurn(planSession, task, _renderer);
+    } catch (e) {
+      _renderer.hideSpinner();
+      _renderer.printError('  ⚠ Plan research failed: $e');
+      return;
+    }
+    _renderer.hideSpinner();
+
+    // 2. Check if .proxima/plan.md was written.
+    final planFile = File(p.join(_config.workingDir, '.proxima', 'plan.md'));
+    if (!await planFile.exists()) {
+      _renderer.printError(
+        '  Plan was not produced. Try again with more detail.',
+      );
+      return;
+    }
+
+    // 3. Show plan and prompt for approval.
+    final planText = await planFile.readAsString();
+    stdout.writeln('');
+    stdout.writeln(planText);
+    stdout.writeln('');
+    stdout.write('  Execute this plan? [y/N] ');
+
+    final line = stdin.readLineSync() ?? '';
+    stdout.writeln('');
+
+    if (line.trim().toLowerCase() != 'y') {
+      _renderer.printDim(
+        '  Plan saved to .proxima/plan.md — edit it and run /execute to proceed.',
+      );
+      return;
+    }
+
+    // 4. Execute: new normal session running the plan.
+    _session = ProximaSession.create(_config);
+    _renderer.showSpinner('Executing…');
+    try {
+      _session = await _getAgentLoop().runTurn(
+        _session,
+        'Execute the plan in .proxima/plan.md step by step.',
+        _renderer,
+      );
+    } catch (e) {
+      _renderer.hideSpinner();
+      _renderer.printError('  ⚠ Execution failed: $e');
+      return;
+    }
+    _renderer.hideSpinner();
+    await _sessionStorage.save(_session);
+  }
+
+  Future<void> _handleExecutePlan() async {
+    final planFile = File(p.join(_config.workingDir, '.proxima', 'plan.md'));
+    if (!await planFile.exists()) {
+      _renderer.printError(
+        '  No plan found. Run /plan <task> first to create one.',
+      );
+      return;
+    }
+
+    _session = ProximaSession.create(_config);
+    _renderer.showSpinner('Executing plan…');
+    try {
+      _session = await _getAgentLoop().runTurn(
+        _session,
+        'Execute the plan in .proxima/plan.md step by step.',
+        _renderer,
+      );
+    } catch (e) {
+      _renderer.hideSpinner();
+      _renderer.printError('  ⚠ Execution failed: $e');
+      return;
+    }
+    _renderer.hideSpinner();
+    await _sessionStorage.save(_session);
   }
 }

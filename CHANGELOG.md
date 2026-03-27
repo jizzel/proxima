@@ -10,8 +10,44 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `/model <name>` now persists the selected model as `model:` in `~/.proxima/config.yaml` — future sessions start with the last chosen model without needing `--model` or re-selecting via `/model`
-- `ProximaConfig.saveDefaultModel(model)` static helper — creates `~/.proxima/config.yaml` (and parent directory) if absent; replaces existing `model:` line in-place, leaving all other keys untouched
+
+#### Terminal UX — Rich Feedback & Activity Indicators
+- `AgentCallbacks.onIterationStart(iteration, maxIterations)` — called at the start of each loop iteration; `Renderer` uses it to show `⠋ Thinking… [N/10]` spinner with iteration depth between tool calls
+- `AgentCallbacks.onToolExecuting(toolCall)` — fires immediately before tool execution (after permission grant); `Renderer` shows `  ◆ Reading core/session.dart…` activity line
+- Animated blink dots on in-progress tool lines — executing line pulses `…` → `….` → `…..` → `…...` every 400ms via `Timer.periodic` so users see the tool is alive, not stuck
+- Context preserved in result lines — the activity label from `onToolExecuting` is held in `_pendingLabel` and reused in `onToolResult`; result now reads `  ✓ Reading core/session.dart…  (1423 lines)  0.3s` instead of `  ✓ read_file  (1423 lines)`
+- Per-tool elapsed time — `_toolStartTime` captured at `onToolExecuting`, formatted as `ms` or `s` and appended dim to every result line
+- Turn elapsed time in usage report — `_turnStartTime` set on iteration 1 via `onIterationStart`; appended to the `↑N ↓N  total: N` line: `  ↑1240 ↓387  total: 14832  4.2s  cost: $0.0042`
+- `onThinking` now shows `⠋ Working…` spinner after printing the reasoning line, bridging the gap between reasoning and the first tool executing line
+- Clarify styling — `onClarify` now renders `  ? question` with cyan `?` instead of raw bold text
+- `_fmtElapsed(Duration)` helper — `<1000ms` → `NNNms`, `≥1000ms` → `N.Ns`
+- Static `showSpinner('Thinking...')` calls removed from `repl.dart`; spinner is now driven entirely by `onIterationStart`
+
+#### Plan Mode
+- `/plan <task>` slash command — runs the agent in `SessionMode.safe` with `isPlanMode: true`, produces `.proxima/plan.md`, then shows a `y/N` approval prompt before executing
+- `/execute` slash command — executes the saved plan in `.proxima/plan.md` without re-running the research phase
+- `/cost` slash command — shows current session cost and a cost table for the 10 most recent sessions
+- **Shift+Tab plan-mode toggle** — press Shift+Tab at the prompt to toggle plan mode on/off without typing `/plan`; the prompt changes to `❯ [plan]`; toggles print a green `Plan mode ON/OFF` notice (same style as `/mode` switches) plus a dim one-line description; slash commands continue to work normally inside plan mode
+- `ReadLine.readLine()` gains `onShiftTab` callback; detects `ESC [ Z` (standard terminal Shift+Tab), fires the callback, and returns `ReadLine.shiftTabSentinel` — no history entry, no completion side-effects
+- `ReadLine.shiftTabSentinel` public constant (`\x00__shift_tab__`) — lets the REPL identify the toggle without a magic string literal
+- `ProximaSession.isPlanMode` runtime-only bool (not persisted) — set by `ProximaSession.create(..., isPlanMode: true)`
+- `ProximaSession.cumulativeCost` field — tracks session-total USD cost; persisted to session JSON as `cumulative_cost`; incremented via `recordCost(double)`
+- `ContextBuilder` injects a PLAN MODE system-prompt block when `session.isPlanMode` is true — instructs the agent to use only read tools, then call `write_plan` with a structured markdown plan (context, step-by-step changes, tests, risks)
+- `WritePlanTool` (`lib/tools/agent/write_plan_tool.dart`) — `confirm`-risk tool that writes agent-produced plans to `.proxima/plan.md`; supports `dryRun()`
+
+#### Model Persistence
+- `/model <name>` now persists the selected model as `model:` in `~/.proxima/config.yaml` — future sessions start with the last chosen model
+- `ProximaConfig.saveDefaultModel(model)` static helper — creates `~/.proxima/config.yaml` (and parent directory) if absent; replaces the `model:` line in-place, leaving all other keys untouched
+
+#### Cost Tracking
+- `CostCalculator.compute(model, usage)` — maps known Anthropic model IDs to per-token USD rates; returns `0.0` for unknown/local models
+- `CostCalculator.format(cost)` — formats USD cost as `$0.0000` (4 decimal places)
+- `AgentCallbacks.onUsageReport` extended with `turnCost` and `sessionCost` parameters; `Renderer` appends `cost: $N.NNNN` to the usage line when non-zero
+- `AgentLoop` computes `turnCost` via `CostCalculator.compute` and passes it to `onUsageReport` alongside the session cumulative
+- `/status` now shows `Cost` row when session cost is non-zero
+
+#### Search
+- `search_symbol` tool (`lib/tools/search/search_symbol_tool.dart`) — searches for symbol definitions (class, function, variable, any) using regex across the working directory; supports `path` scoping and `kind` filtering; rejects path traversal
 
 ---
 

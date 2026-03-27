@@ -33,13 +33,22 @@ class Renderer implements AgentCallbacks {
   String _statusModel = '';
   SessionMode _statusMode = SessionMode.confirm;
   bool _statusPlanMode = false;
+  bool _statusAcceptEdits = false;
+  // When true, onUsageReport skips _printStatusLine (caller will do it later).
+  bool _suppressStatusLine = false;
 
   Renderer({bool debug = false}) : _debug = debug;
 
-  void updateStatus({String? model, SessionMode? mode, bool? planMode}) {
+  void updateStatus({
+    String? model,
+    SessionMode? mode,
+    bool? planMode,
+    bool? acceptEditsMode,
+  }) {
     if (model != null) _statusModel = model;
     if (mode != null) _statusMode = mode;
     if (planMode != null) _statusPlanMode = planMode;
+    if (acceptEditsMode != null) _statusAcceptEdits = acceptEditsMode;
   }
 
   void printHeader({
@@ -194,6 +203,16 @@ class Renderer implements AgentCallbacks {
         '  ↑${turn.inputTokens} ↓${turn.outputTokens}  total: ${cumulative.totalTokens}$timePart$costPart',
       ),
     );
+    if (!_suppressStatusLine) _printStatusLine();
+  }
+
+  /// Suppress the automatic status line in the next [onUsageReport] call.
+  /// The caller is responsible for calling [printStatusLine] at the right time.
+  void suppressNextStatusLine() => _suppressStatusLine = true;
+
+  /// Print the status line immediately and clear the suppress flag.
+  void printStatusLine() {
+    _suppressStatusLine = false;
     _printStatusLine();
   }
 
@@ -202,10 +221,12 @@ class Renderer implements AgentCallbacks {
     final modelLabel = _statusModel.contains('/')
         ? _statusModel.substring(_statusModel.indexOf('/') + 1)
         : _statusModel;
-    final modeLabel =
-        _statusMode == SessionMode.confirm ? '' : '  mode: ${_statusMode.name}';
+    final modeLabel = _statusMode == SessionMode.confirm
+        ? ''
+        : '  mode: ${_statusMode.name}';
     final planLabel = _statusPlanMode ? '  [plan]' : '';
-    stdout.writeln(dim('  model: $modelLabel$modeLabel$planLabel'));
+    final editLabel = _statusAcceptEdits ? '  [edits]' : '';
+    stdout.writeln(dim('  model: $modelLabel$modeLabel$planLabel$editLabel'));
   }
 
   @override

@@ -152,11 +152,8 @@ class AgentLoop {
             body.question,
             body.options,
           );
-          final answer =
-              body.options[idx.clamp(0, body.options.length - 1)];
-          session.addMessage(
-            Message(role: MessageRole.user, content: answer),
-          );
+          final answer = body.options[idx.clamp(0, body.options.length - 1)];
+          session.addMessage(Message(role: MessageRole.user, content: answer));
           callbacks.onUsageReport(
             response.usage,
             session.cumulativeUsage,
@@ -456,6 +453,21 @@ class AgentLoop {
             success: !isError,
           ),
         );
+
+        // In plan mode, exit the loop immediately after write_plan succeeds.
+        // This prevents the LLM from taking another turn and emitting noise
+        // (options lists, questions) that would appear before the picker.
+        if (!isError && toolCall.tool == 'write_plan' && session.isPlanMode) {
+          session.planWritten = true;
+          session.status = TaskStatus.completed;
+          callbacks.onUsageReport(
+            response.usage,
+            session.cumulativeUsage,
+            turnCost,
+            session.cumulativeCost,
+          );
+          return session;
+        }
 
         continue;
       }

@@ -63,8 +63,9 @@ class PickerWidget {
   }) {
     if (!firstRender) stdout.write('\x1b[${options.length}A');
     for (var i = 0; i < options.length; i++) {
-      final hint =
-          (hints != null && i < hints.length) ? dim('  ${hints[i]}') : '';
+      final hint = (hints != null && i < hints.length)
+          ? dim('  ${hints[i]}')
+          : '';
       if (i == selected) {
         stdout.write('\r\x1b[K\x1b[7m  ▶ ${options[i]}\x1b[0m$hint\n');
       } else {

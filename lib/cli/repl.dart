@@ -41,6 +41,8 @@ import 'package:path/path.dart' as p;
 
 enum _PlanDecision { execute, edit, skip }
 
+enum _ReplMode { normal, plan, acceptEdits }
+
 /// Main REPL loop integrating all layers.
 class ProximaRepl {
   ProximaConfig _config;
@@ -62,7 +64,7 @@ class ProximaRepl {
   int _contextWindow = 128000;
 
   bool _running = true;
-  bool _planMode = false;
+  _ReplMode _replMode = _ReplMode.normal;
   late final ReadLine _readline;
 
   /// Ollama model list, fetched once at startup (best-effort).
@@ -135,7 +137,8 @@ class ProximaRepl {
     _renderer.updateStatus(
       model: _activeModel,
       mode: _session.mode,
-      planMode: _planMode,
+      planMode: _replMode == _ReplMode.plan,
+      acceptEditsMode: _replMode == _ReplMode.acceptEdits,
     );
 
     // Pre-fetch Ollama model list in background (non-fatal).
@@ -241,8 +244,9 @@ class ProximaRepl {
     while (_running) {
       final input = _readline.readLine(
         prompt: _promptString(),
+        statusTip: _modeTip(),
         completer: _completer,
-        onShiftTab: _togglePlanMode,
+        onShiftTab: _cycleReplMode,
       );
 
       if (input == null) {
@@ -277,7 +281,7 @@ class ProximaRepl {
       if (!_running) break;
 
       // In plan mode, every prompt is treated as a /plan task.
-      if (_planMode) {
+      if (_replMode == _ReplMode.plan) {
         await _runPlan(trimmed);
         continue;
       }
@@ -452,16 +456,22 @@ class ProximaRepl {
     return decisions[idx];
   }
 
-  void _togglePlanMode() {
-    _planMode = !_planMode;
-    _renderer.updateStatus(planMode: _planMode);
-    if (_planMode) {
-      _renderer.printSuccess('  Plan mode  ON   ❯ [plan]');
-      _renderer.printDim('  Every prompt researches + asks approval before writing.');
-    } else {
-      _renderer.printSuccess('  Plan mode  OFF  ❯');
-      _renderer.printDim('  Back to normal — prompts go straight to the agent.');
-    }
+  void _cycleReplMode() {
+    _replMode = switch (_replMode) {
+      _ReplMode.normal => _ReplMode.plan,
+      _ReplMode.plan => _ReplMode.acceptEdits,
+      _ReplMode.acceptEdits => _ReplMode.normal,
+    };
+    // Sync permission gate mode for accept-edits (auto-approves confirm tools).
+    _permissionGate.mode = switch (_replMode) {
+      _ReplMode.acceptEdits => SessionMode.auto,
+      _ => _config.mode,
+    };
+    _renderer.updateStatus(
+      planMode: _replMode == _ReplMode.plan,
+      acceptEditsMode: _replMode == _ReplMode.acceptEdits,
+    );
+    // No print here — tip is shown below the prompt by ReadLine.
   }
 
   String _promptString() {
@@ -470,10 +480,19 @@ class ProximaRepl {
       SessionMode.safe => green(' safe'),
       SessionMode.confirm => '',
     };
-    final planTag = _planMode ? cyan(' [plan]') : '';
-    // Colored prompt: "  ❯ " in cyan, mode/plan tags if set.
-    return '\n${cyan(' ❯')}$modeTag$planTag ';
+    final replTag = switch (_replMode) {
+      _ReplMode.plan => cyan(' [plan]'),
+      _ReplMode.acceptEdits => cyan(' [edits]'),
+      _ReplMode.normal => '',
+    };
+    return '\n${cyan(' ❯')}$modeTag$replTag ';
   }
+
+  String? _modeTip() => switch (_replMode) {
+    _ReplMode.plan => '  ⏸ plan mode on  (shift+tab to cycle)',
+    _ReplMode.acceptEdits => '  ⏵⏵ accept edits on  (shift+tab to cycle)',
+    _ReplMode.normal => null,
+  };
 
   /// Dispatches /plan and /execute tasks without blocking the REPL loop.
   /// Called synchronously from the slash command callback; runs async work
@@ -490,6 +509,9 @@ class ProximaRepl {
     // 1. Run agent in safe mode with plan mode flag set.
     // The renderer drives the spinner via onIterationStart — no manual
     // showSpinner needed here.
+    // Suppress the status line that onUsageReport would normally print — we
+    // want it to appear *after* the plan content and picker, not before.
+    _renderer.suppressNextStatusLine();
     final planConfig = _config.copyWith(mode: SessionMode.safe);
     var planSession = ProximaSession.create(planConfig, isPlanMode: true);
 
@@ -499,12 +521,15 @@ class ProximaRepl {
     } catch (e) {
       _renderer.hideSpinner();
       _renderer.printError('  ⚠ Plan research failed: $e');
+      _renderer.printStatusLine(); // ensure status line still appears
       return;
     }
     _renderer.hideSpinner();
 
     // 2. Check if .proxima/plan.md was written and show approval picker.
     await _maybeShowPlanPicker(beforeTurn, requirePlan: true);
+    // 3. Print status line below the picker (deferred from onUsageReport).
+    _renderer.printStatusLine();
   }
 
   /// If `.proxima/plan.md` was written at or after [since], show the plan

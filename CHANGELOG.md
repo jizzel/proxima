@@ -27,7 +27,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `/plan <task>` slash command — runs the agent in `SessionMode.safe` with `isPlanMode: true`, produces `.proxima/plan.md`, then shows an arrow-key picker (Execute / Edit / Skip) before executing
 - `/execute` slash command — executes the saved plan in `.proxima/plan.md` without re-running the research phase
 - `/cost` slash command — shows current session cost and a cost table for the 10 most recent sessions
-- **Shift+Tab plan-mode toggle** — press Shift+Tab at the prompt to toggle plan mode on/off without typing `/plan`; the prompt changes to `❯ [plan]`; toggles print a green `Plan mode ON/OFF` notice (same style as `/mode` switches) plus a dim one-line description; slash commands continue to work normally inside plan mode
+- **Shift+Tab REPL mode cycle** — Shift+Tab now cycles through three modes: normal → plan → accept-edits → normal; each press updates the prompt tag (`❯` / `❯ [plan]` / `❯ [edits]`) and shows a compact tip line *below* the prompt (`⏸ plan mode on` / `⏵⏵ accept edits on`); the previous verbose green print above the prompt is removed
+- **Accept-edits mode** (`❯ [edits]`) — third cycle state; sets `_permissionGate.mode` to `SessionMode.auto` transiently so confirm-level tool calls (writes, commands) execute without the Approve/Deny picker; cycling back to normal restores the configured mode; `_session.mode` and the session file are unchanged (transient only)
+- `_ReplMode` enum (`normal | plan | acceptEdits`) in `repl.dart` replaces the former `bool _planMode` field
+- `_cycleReplMode()` replaces `_togglePlanMode()`; syncs permission gate and calls `_renderer.updateStatus(planMode:, acceptEditsMode:)` with no print
+- `_modeTip()` helper returns the tip string for the active mode (null when normal)
+- `ReadLine.readLine()` gains optional `String? statusTip` parameter; stored as `_statusTip` field and folded into `_renderPanel()` — when no suggestions are visible and a tip is set, one dim tip line is drawn below the prompt; suggestions take priority (tip suppressed while panel is open)
 - `ReadLine.readLine()` gains `onShiftTab` callback; detects `ESC [ Z` (standard terminal Shift+Tab), fires the callback, and returns `ReadLine.shiftTabSentinel` — no history entry, no completion side-effects
 - `ReadLine.shiftTabSentinel` public constant (`\x00__shift_tab__`) — lets the REPL identify the toggle without a magic string literal
 - `ProximaSession.isPlanMode` runtime-only bool (not persisted) — set by `ProximaSession.create(..., isPlanMode: true)`
@@ -49,12 +54,28 @@ Versions follow [Semantic Versioning](https://semver.org/).
 #### Search
 - `search_symbol` tool (`lib/tools/search/search_symbol_tool.dart`) — searches for symbol definitions (class, function, variable, any) using regex across the working directory; supports `path` scoping and `kind` filtering; rejects path traversal
 
+#### Interactive UX — Consistent Arrow-Key Pickers & Status Line
+- `PickerWidget` (`lib/renderer/picker_widget.dart`) — shared synchronous arrow-key single-choice picker; renders `▶ Option  hint` rows with inverse-video highlight; used everywhere a fixed choice list is presented; Escape/Ctrl-C returns `defaultIndex`
+- **Permission prompt → picker** — `PermissionPrompt._confirmPrompt()` replaced with `PickerWidget.pick(options: ['Approve', 'Deny'], ...)` with dim hints; high-risk typed `CONFIRM` path unchanged
+- **Stuck dialog → picker** — `TaskSummaryRenderer.renderStuck()` `a/c` single-keypress replaced with `PickerWidget.pick(options: ['Continue', 'Abort'], defaultIndex: 1)` (Abort is the safer default when stuck)
+- **`/mode` no-arg → picker** — `/mode` with no argument opens an arrow-key picker pre-selected to the current mode (safe / confirm / auto with hints); previously showed a dim text line only
+- **Plan approval picker simplified** — `_planApprovalPicker()` in `repl.dart` now delegates to `PickerWidget` instead of the hand-rolled `_renderPlanPicker`/`_clearPlanPicker` helpers (removed)
+- **Persistent status line after each turn** — `Renderer.onUsageReport()` calls `_printStatusLine()` after the token line; shows `model: <name>` always, `mode: <name>` when non-default (non-confirm), `[plan]` when plan mode active, `[edits]` when accept-edits mode active
+- `Renderer.updateStatus({model, mode, planMode, acceptEditsMode})` — push current state into the renderer; called from `initialize()`, `_switchModel()`, `_switchMode()`, and `_cycleReplMode()`
+- **`ClarifyResponse` gains `options` field** — `List<String> options` (default empty); when non-empty the agent loop stays alive: `onClarifyWithOptions` shows a picker, the selected answer is injected as a user message, and the loop continues without exiting
+- `AgentCallbacks.onClarifyWithOptions(question, options)` — new abstract method; `Renderer` implements it via `PickerWidget.pick(options: options)`; all mock callbacks in tests return `Future.value(0)`
+- `SchemaValidator._validateClarify()` parses optional `options` array from the LLM response
+- `ContextBuilder` adds operating rule 8 — instructs the LLM to use `"options"` array in `clarify` responses when presenting a fixed choice list
+
 ### Fixed
 - **Plan mode agent offered numbered options menu instead of stopping** — system prompt now explicitly forbids presenting options or asking for approval after `write_plan`; instructs the agent to emit a brief confirmation and stop
 - **`onFinalResponse` printed a spurious blank line during streaming** — when streaming was active, `text` is `''`; the renderer now skips `writeln('')` + `_renderMarkdown('')` when text is empty, avoiding a double blank line above the closing separator
 - **`_dispatchPlan` silently discarded async results** — `_runPlan()` and `_handleExecutePlan()` are now wrapped with `unawaited()` making the fire-and-forget intent explicit
 - **Redundant `Researching…` spinner in `_runPlan`** — removed manual `showSpinner`/`hideSpinner` calls; the renderer drives the spinner correctly via `onIterationStart`
 - **Plan approval picker `Edit` hint was misleading** — said "save to .proxima/plan.md" (plan is already saved at that point); corrected to "edit .proxima/plan.md, then run /execute"
+- **`write_plan` called twice by small local models** — the agent loop now exits immediately after the first successful `write_plan` in a plan-mode session (`session.planWritten = true`); the LLM no longer takes a second turn, eliminating the duplicate write and the "Would you like to: 1. Approve..." options noise that appeared before the picker
+- **Status line printed before plan content** — `onUsageReport` was firing (and printing the status line) before `_maybeShowPlanPicker` displayed the plan text and picker; fixed by `suppressNextStatusLine()` before the plan agent turn and `printStatusLine()` explicitly after the picker
+- **Shift+Tab verbose print removed** — the green `Plan mode ON/OFF` + dim description line printed *above* the prompt on every toggle is replaced by the compact tip line rendered *below* the prompt by `ReadLine`
 - **Shift+Tab detection used exact byte match only** — added `endsWith('[Z')` guard to cover terminal emulators that deliver the sequence with a prefix variation
 
 ---

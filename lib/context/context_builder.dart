@@ -131,10 +131,10 @@ class ContextBuilder {
         'Step 2 — Write plan: call write_plan once with the full plan in markdown.',
       );
       buf.writeln(
-        'Step 3 — Stop: after write_plan succeeds, emit a brief final response',
+        'Step 3 — Stop immediately: after write_plan succeeds, your ONLY allowed',
       );
       buf.writeln(
-        '  confirming the plan was written. Do not offer options or ask questions.',
+        '  output is one sentence: "Plan written to .proxima/plan.md." Nothing else.',
       );
       buf.writeln('');
       buf.writeln('The plan must include:');
@@ -150,10 +150,10 @@ class ContextBuilder {
       );
       buf.writeln('');
       buf.writeln(
-        'IMPORTANT: After write_plan, do not present numbered options, ask for',
+        '!! STRICT RULE: After write_plan you MUST NOT list options, ask questions,',
       );
       buf.writeln(
-        'approval, or offer to modify the plan. The user decides what to do next.',
+        '   offer to modify, confirm, or continue. Output exactly one sentence and stop.',
       );
     }
 

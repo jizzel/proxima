@@ -120,6 +120,11 @@ class ProximaSession {
   /// (agent researches and writes .proxima/plan.md before executing).
   bool isPlanMode;
 
+  /// Runtime-only flag — not persisted. Set to true by the agent loop after
+  /// the first successful write_plan call. Causes the loop to exit immediately
+  /// so the REPL can show the picker without waiting for a second LLM turn.
+  bool planWritten = false;
+
   ProximaSession({
     required this.id,
     required this.createdAt,

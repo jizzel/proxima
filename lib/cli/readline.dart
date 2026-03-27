@@ -43,6 +43,9 @@ class ReadLine {
   // 0 = no panel painted. Includes the separator line.
   int _panelHeight = 0;
 
+  /// Tip shown below the prompt when no suggestions are visible.
+  String? _statusTip;
+
   ReadLine({String? historyFile})
     : _console = Console.scrolling(),
       _historyFile = historyFile {
@@ -89,10 +92,12 @@ class ReadLine {
 
   String? readLine({
     String prompt = '',
+    String? statusTip,
     List<String> Function(String buffer)? completer,
     bool cancelOnBreak = true,
     void Function()? onShiftTab,
   }) {
+    _statusTip = statusTip;
     var buffer = '';
     var cursorPos = 0;
     _historyIndex = -1;
@@ -238,8 +243,7 @@ class ReadLine {
       // unrecognised escape sequences through the printable-char path with the
       // raw bytes in key.char. Match both the full sequence and the suffix
       // variant to cover xterm/VTE differences.
-      if (!key.isControl &&
-          (key.char == '\x1b[Z' || key.char.endsWith('[Z'))) {
+      if (!key.isControl && (key.char == '\x1b[Z' || key.char.endsWith('[Z'))) {
         _erasePanel();
         onShiftTab?.call();
         // Return a sentinel that the REPL interprets as a mode toggle (no
@@ -343,8 +347,14 @@ class ReadLine {
     int focusIndex,
   ) {
     final toShow = candidates.take(_maxSuggestions).toList();
-    // New panel height: separator + suggestion rows (0 if no suggestions).
-    final newHeight = toShow.isEmpty ? 0 : 1 + toShow.length;
+    // When no suggestions, show the status tip (if any) as a 1-line panel.
+    final tipLine = toShow.isEmpty ? _statusTip : null;
+    // New panel height: separator + rows (0 if nothing to show).
+    final newHeight = toShow.isNotEmpty
+        ? 1 + toShow.length
+        : tipLine != null
+        ? 1
+        : 0;
 
     // Step 1: move down to cover old panel area and erase each old row.
     if (_panelHeight > 0) {
@@ -361,8 +371,8 @@ class ReadLine {
     final back = buffer.length - cursorPos;
     if (back > 0) stdout.write('\x1b[${back}D');
 
-    // Step 3: if there are suggestions, draw the panel below without scrolling.
-    if (toShow.isEmpty) {
+    // Step 3: draw the panel below without scrolling.
+    if (newHeight == 0) {
       _panelHeight = 0;
       return;
     }
@@ -372,15 +382,20 @@ class ReadLine {
     // Save cursor, draw panel, restore cursor.
     stdout.write('\x1b[s');
 
-    // Separator line.
-    stdout.write('\n\r\x1b[K');
-    final w = _termWidth();
-    stdout.write('\x1b[2m${'─' * w}\x1b[0m');
-
-    // Suggestion rows.
-    for (var i = 0; i < toShow.length; i++) {
+    if (tipLine != null) {
+      // Status tip: single dim line below the prompt (no separator).
+      stdout.write('\n\r\x1b[K\x1b[2m$tipLine\x1b[0m');
+    } else {
+      // Separator line.
       stdout.write('\n\r\x1b[K');
-      stdout.write(_fmtSuggestion(toShow[i], buffer, i == focusIndex));
+      final w = _termWidth();
+      stdout.write('\x1b[2m${'─' * w}\x1b[0m');
+
+      // Suggestion rows.
+      for (var i = 0; i < toShow.length; i++) {
+        stdout.write('\n\r\x1b[K');
+        stdout.write(_fmtSuggestion(toShow[i], buffer, i == focusIndex));
+      }
     }
 
     stdout.write('\x1b[u'); // back to input line

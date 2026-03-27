@@ -113,20 +113,26 @@ class ContextBuilder {
     if (session.isPlanMode) {
       buf.writeln('');
       buf.writeln(
-        'You are in PLAN MODE. Your task is to research the codebase and produce a structured',
+        'PLAN MODE: research the codebase and produce a structured implementation plan.',
       );
       buf.writeln(
-        'implementation plan — do NOT write, patch, or execute any code yet.',
+        'Do NOT write, patch, execute code, or ask the user questions.',
       );
       buf.writeln('');
       buf.writeln(
-        'Use read_file, search, search_symbol, glob, and list_files to understand the codebase.',
+        'Step 1 — Research: use read_file, search, search_symbol, glob, list_files.',
       );
       buf.writeln(
-        'When you have a complete picture, call write_plan with the full plan in markdown format.',
+        'Step 2 — Write plan: call write_plan once with the full plan in markdown.',
+      );
+      buf.writeln(
+        'Step 3 — Stop: after write_plan succeeds, emit a final response that says',
+      );
+      buf.writeln(
+        '  exactly "Plan written to .proxima/plan.md" and nothing else.',
       );
       buf.writeln('');
-      buf.writeln('Your plan must include:');
+      buf.writeln('The plan must include:');
       buf.writeln('1. Context: what exists, what needs to change, and why');
       buf.writeln(
         '2. Step-by-step changes: exact files, methods, and logic (implementation-ready)',
@@ -139,7 +145,10 @@ class ContextBuilder {
       );
       buf.writeln('');
       buf.writeln(
-        'Be specific enough that the plan can be executed without any additional research.',
+        'IMPORTANT: Do not present options, ask for approval, or produce any text',
+      );
+      buf.writeln(
+        'other than "Plan written to .proxima/plan.md" after calling write_plan.',
       );
     }
 

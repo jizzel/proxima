@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dart_console/dart_console.dart';
 import '../core/config.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
@@ -36,6 +37,8 @@ import 'arg_parser.dart';
 import 'readline.dart';
 import 'slash_commands.dart';
 import 'package:path/path.dart' as p;
+
+enum _PlanDecision { execute, edit, skip }
 
 /// Main REPL loop integrating all layers.
 class ProximaRepl {
@@ -414,6 +417,81 @@ class ProximaRepl {
     _renderer.printSuccess('  Working dir: $dir');
   }
 
+  /// Arrow-key picker shown after the plan is displayed.
+  /// Returns the user's decision. Defaults to [_PlanDecision.skip] on Escape/Ctrl-C.
+  _PlanDecision _planApprovalPicker() {
+    const options = ['Execute', 'Edit', 'Skip'];
+    const decisions = [
+      _PlanDecision.execute,
+      _PlanDecision.edit,
+      _PlanDecision.skip,
+    ];
+    const hints = [
+      'run the plan now',
+      'save to .proxima/plan.md and exit',
+      'discard and return to prompt',
+    ];
+
+    var selected = 0;
+    final console = Console.scrolling();
+
+    stdout.writeln(dim('  ↑/↓ select · Enter confirm'));
+    _renderPlanPicker(options, hints, selected, firstRender: true);
+
+    while (true) {
+      final key = console.readKey();
+      if (!key.isControl) continue;
+
+      switch (key.controlChar) {
+        case ControlCharacter.arrowUp:
+          if (selected > 0) {
+            selected--;
+            _renderPlanPicker(options, hints, selected);
+          }
+        case ControlCharacter.arrowDown:
+          if (selected < options.length - 1) {
+            selected++;
+            _renderPlanPicker(options, hints, selected);
+          }
+        case ControlCharacter.enter:
+          _clearPlanPicker(console, options.length + 1);
+          return decisions[selected];
+        case ControlCharacter.escape:
+        case ControlCharacter.ctrlC:
+          _clearPlanPicker(console, options.length + 1);
+          return _PlanDecision.skip;
+        default:
+          break;
+      }
+    }
+  }
+
+  void _renderPlanPicker(
+    List<String> options,
+    List<String> hints,
+    int selected, {
+    bool firstRender = false,
+  }) {
+    if (!firstRender) {
+      stdout.write('\x1b[${options.length}A');
+    }
+    for (var i = 0; i < options.length; i++) {
+      final hint = dim('  ${hints[i]}');
+      if (i == selected) {
+        stdout.write('\r\x1b[K\x1b[7m  ▶ ${options[i]}\x1b[0m$hint\n');
+      } else {
+        stdout.write('\r\x1b[K     ${dim(options[i])}$hint\n');
+      }
+    }
+  }
+
+  void _clearPlanPicker(Console console, int lineCount) {
+    for (var i = 0; i < lineCount; i++) {
+      console.cursorUp();
+      console.eraseLine();
+    }
+  }
+
   void _togglePlanMode() {
     _planMode = !_planMode;
     if (_planMode) {
@@ -471,17 +549,22 @@ class ProximaRepl {
       return;
     }
 
-    // 3. Show plan and prompt for approval.
+    // 3. Show plan and prompt for approval via arrow-key picker.
     final planText = await planFile.readAsString();
     stdout.writeln('');
     stdout.writeln(planText);
     stdout.writeln('');
-    stdout.write('  Execute this plan? [y/N] ');
 
-    final line = stdin.readLineSync() ?? '';
+    final decision = _planApprovalPicker();
     stdout.writeln('');
 
-    if (line.trim().toLowerCase() != 'y') {
+    if (decision == _PlanDecision.skip) {
+      _renderer.printDim(
+        '  Skipped. Plan saved to .proxima/plan.md — run /execute to proceed.',
+      );
+      return;
+    }
+    if (decision == _PlanDecision.edit) {
       _renderer.printDim(
         '  Plan saved to .proxima/plan.md — edit it and run /execute to proceed.',
       );

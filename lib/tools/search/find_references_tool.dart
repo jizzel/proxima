@@ -120,42 +120,39 @@ class FindReferencesTool implements ProximaTool {
     int maxResults,
     List<({String file, int line, String content})> hits,
   ) async {
-    List<FileSystemEntity> entities;
     try {
-      entities = await dir.list(followLinks: false).toList();
+      await for (final entity in dir.list(followLinks: false)) {
+        if (hits.length >= maxResults) return;
+
+        final basename = p.basename(entity.path);
+
+        if (entity is Directory) {
+          if (_skipDirs.contains(basename)) continue;
+          await _walk(
+            entity,
+            symbol,
+            extensions,
+            excludeDefinition,
+            workingDir,
+            maxResults,
+            hits,
+          );
+        } else if (entity is File) {
+          if (_skipSuffixes.any((s) => entity.path.endsWith(s))) continue;
+          final ext = p.extension(entity.path).toLowerCase();
+          if (!extensions.contains(ext)) continue;
+          await _searchFile(
+            entity,
+            symbol,
+            excludeDefinition,
+            workingDir,
+            maxResults,
+            hits,
+          );
+        }
+      }
     } catch (_) {
       return;
-    }
-
-    for (final entity in entities) {
-      if (hits.length >= maxResults) return;
-
-      final basename = p.basename(entity.path);
-
-      if (entity is Directory) {
-        if (_skipDirs.contains(basename)) continue;
-        await _walk(
-          entity,
-          symbol,
-          extensions,
-          excludeDefinition,
-          workingDir,
-          maxResults,
-          hits,
-        );
-      } else if (entity is File) {
-        if (_skipSuffixes.any((s) => entity.path.endsWith(s))) continue;
-        final ext = p.extension(entity.path).toLowerCase();
-        if (!extensions.contains(ext)) continue;
-        await _searchFile(
-          entity,
-          symbol,
-          excludeDefinition,
-          workingDir,
-          maxResults,
-          hits,
-        );
-      }
     }
   }
 

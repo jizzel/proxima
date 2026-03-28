@@ -20,30 +20,27 @@ class PluginLoader {
       final pluginsRoot = Directory(absDir);
       if (!await pluginsRoot.exists()) continue;
 
-      List<FileSystemEntity> entries;
       try {
-        entries = await pluginsRoot.list(followLinks: false).toList();
+        await for (final entry in pluginsRoot.list(followLinks: false)) {
+          if (entry is! Directory) continue;
+          final tool = await _loadOne(entry);
+          if (tool != null) tools.add(tool);
+        }
       } catch (_) {
         continue;
-      }
-
-      for (final entry in entries) {
-        if (entry is! Directory) continue;
-        final tool = _loadOne(entry);
-        if (tool != null) tools.add(tool);
       }
     }
 
     return tools;
   }
 
-  static ShellPluginTool? _loadOne(Directory pluginDir) {
+  static Future<ShellPluginTool?> _loadOne(Directory pluginDir) async {
     final descriptorFile = File(p.join(pluginDir.path, 'plugin.json'));
-    if (!descriptorFile.existsSync()) return null;
+    if (!await descriptorFile.exists()) return null;
 
     Map<String, dynamic> descriptor;
     try {
-      final raw = descriptorFile.readAsStringSync();
+      final raw = await descriptorFile.readAsString();
       descriptor = (jsonDecode(raw) as Map).cast<String, dynamic>();
     } catch (e) {
       stderr.writeln(
@@ -70,7 +67,7 @@ class PluginLoader {
     final execPath = p.join(pluginDir.path, execRelative);
 
     final execFile = File(execPath);
-    if (!execFile.existsSync()) {
+    if (!await execFile.exists()) {
       stderr.writeln(
         '[proxima] Warning: plugin executable not found: $execPath',
       );
@@ -81,7 +78,7 @@ class PluginLoader {
     // (stat.mode is always 0), so skip this check there.
     if (!Platform.isWindows) {
       try {
-        final stat = execFile.statSync();
+        final stat = await execFile.stat();
         // mode bits: owner execute = 0x40, group = 0x8, other = 0x1
         const execBits = 0x40 | 0x8 | 0x1;
         if ((stat.mode & execBits) == 0) {

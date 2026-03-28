@@ -15,6 +15,9 @@ import '../tools/file/list_files_tool.dart';
 import '../tools/file/glob_tool.dart';
 import '../tools/search/search_tool.dart';
 import '../tools/search/search_symbol_tool.dart';
+import '../tools/search/find_references_tool.dart';
+import '../tools/search/get_imports_tool.dart';
+import '../tools/plugin/plugin_loader.dart';
 import '../tools/agent/write_plan_tool.dart';
 import '../tools/shell/run_command_tool.dart';
 import '../tools/shell/run_tests_tool.dart';
@@ -77,7 +80,7 @@ class ProximaRepl {
     _contextWindow = _contextWindowForModel(_activeModel);
     _readline = ReadLine.withUserHistory();
     _renderer = Renderer(debug: _config.debug);
-    _toolRegistry = _buildToolRegistry();
+    _toolRegistry = await _buildToolRegistry();
 
     final auditLog = AuditLog.forCurrentUser();
     final riskClassifier = RiskClassifier(_toolRegistry);
@@ -188,7 +191,7 @@ class ProximaRepl {
     return _agentLoop!;
   }
 
-  ToolRegistry _buildToolRegistry() {
+  Future<ToolRegistry> _buildToolRegistry() async {
     final registry = ToolRegistry();
     registry.register(ReadFileTool());
     registry.register(WriteFileTool());
@@ -198,6 +201,8 @@ class ProximaRepl {
     registry.register(GlobTool());
     registry.register(SearchTool());
     registry.register(SearchSymbolTool());
+    registry.register(FindReferencesTool());
+    registry.register(GetImportsTool());
     registry.register(RunCommandTool());
     registry.register(RunTestsTool());
     // Git tools — safe reads
@@ -212,6 +217,18 @@ class ProximaRepl {
     // Agent tools
     registry.register(DelegateToSubagentTool());
     registry.register(WritePlanTool());
+
+    // Load plugins
+    final plugins = await PluginLoader.load(
+      _config.pluginDirs,
+      _config.workingDir,
+    );
+    for (final plugin in plugins) {
+      if (!registry.contains(plugin.name)) {
+        registry.register(plugin);
+      }
+    }
+
     return registry;
   }
 

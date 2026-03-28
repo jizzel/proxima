@@ -20,6 +20,7 @@ class ProximaConfig {
   final bool criticOnWrite;
   final String? fallbackModel;
   final Map<String, dynamic> raw;
+  final List<String> pluginDirs;
 
   const ProximaConfig({
     required this.model,
@@ -37,6 +38,7 @@ class ProximaConfig {
     this.criticOnWrite = true,
     this.fallbackModel,
     this.raw = const {},
+    this.pluginDirs = const ['.proxima/plugins'],
   });
 
   static ProximaConfig defaults() => ProximaConfig(
@@ -54,6 +56,7 @@ class ProximaConfig {
     anthropicApiKey: Platform.environment['ANTHROPIC_API_KEY'],
     ollamaBaseUrl:
         Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
+    pluginDirs: const ['.proxima/plugins'],
   );
 
   /// Load config: start with defaults, merge user config, then project config.
@@ -119,6 +122,9 @@ class ProximaConfig {
       criticOnWrite: yaml['critic_on_write'] as bool? ?? criticOnWrite,
       fallbackModel: yaml['fallback_model'] as String? ?? fallbackModel,
       raw: Map<String, dynamic>.from(yaml.value),
+      pluginDirs:
+          (yaml['plugin_dirs'] as List?)?.map((e) => e as String).toList() ??
+          pluginDirs,
     );
   }
 
@@ -160,6 +166,7 @@ class ProximaConfig {
     int? maxIterations,
     String? anthropicApiKey,
     String? ollamaBaseUrl,
+    List<String>? pluginDirs,
   }) => ProximaConfig(
     model: model ?? this.model,
     workingDir: workingDir ?? this.workingDir,
@@ -176,5 +183,6 @@ class ProximaConfig {
     criticOnWrite: criticOnWrite,
     fallbackModel: fallbackModel,
     raw: raw,
+    pluginDirs: pluginDirs ?? this.pluginDirs,
   );
 }

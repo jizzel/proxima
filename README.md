@@ -217,6 +217,8 @@ max_iterations: 10
 max_subagent_delegations: 2    # max delegate_to_subagent calls per turn
 anthropic_api_key: sk-ant-...   # or set via environment variable
 ollama_base_url: http://localhost:11434
+plugin_dirs:                   # additional plugin search paths
+  - .proxima/plugins
 ```
 
 ### Project config: `.proxima/config.yaml`
@@ -241,6 +243,9 @@ Same format. Project config takes precedence over user config.
 | `list_files` | safe | List files in a directory |
 | `glob` | safe | Find files matching a glob pattern |
 | `search` | safe | Search file contents with regex |
+| `search_symbol` | safe | Find function, class, method, or variable definitions by name |
+| `find_references` | safe | Find all usages of a symbol across the codebase |
+| `get_imports` | safe | List all imports in a file, categorised by type (Dart, JS/TS, Python, Go) |
 | `write_file` | confirm | Write or create a file (auto-backup) |
 | `patch_file` | confirm | Search-and-replace in a file (auto-backup) |
 | `run_command` | confirm | Run a shell command |
@@ -255,6 +260,63 @@ Same format. Project config takes precedence over user config.
 | `delegate_to_subagent` | safe | Delegate to a specialist subagent (`code_analyzer`, `refactor`, `test`) |
 
 Blocked commands (never executed regardless of mode): `rm -rf /`, `sudo`, `curl | sh`, `git push --force`, path traversal, and other destructive patterns.
+
+### Plugin tools
+
+Drop-in tools live under `.proxima/plugins/<name>/` and consist of a `plugin.json` descriptor and an executable:
+
+```
+.proxima/plugins/word-count/
+  plugin.json   ← descriptor
+  run.sh        ← the executable (shell script, Python, Go binary, anything)
+  README.md     ← optional, but good practice
+```
+
+**`plugin.json`:**
+```json
+{
+  "name": "word_count",
+  "description": "Count words, lines, and characters in a file.",
+  "risk_level": "safe",
+  "timeout_seconds": 10,
+  "executable": "run.sh",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string", "description": "Relative path to the file" }
+    },
+    "required": ["path"]
+  }
+}
+```
+
+**Protocol:** Proxima serialises the tool arguments as JSON and writes them to the plugin's `stdin`. The plugin writes its result to `stdout`. Exit `0` on success; any non-zero exit is an error (stderr is shown to the user).
+
+**Test your plugin standalone:**
+```sh
+echo '{"path":"README.md"}' | sh .proxima/plugins/word-count/run.sh
+```
+
+A fully annotated example plugin lives at `.proxima/plugins/word-count/` — including `run.sh` with inline comments explaining the protocol and `README.md` with tips for writing your own.
+
+Malformed descriptors produce a startup warning and are skipped — Proxima always launches regardless.
+
+| `plugin.json` field | Required | Notes |
+|---|---|---|
+| `name` | ✅ | Snake-case; must not clash with built-in tool names |
+| `description` | ✅ | Shown to the LLM — be specific |
+| `executable` | ✅ | Filename inside the plugin directory |
+| `input_schema` | ✅ | JSON Schema object for the tool's arguments |
+| `risk_level` | — | `safe` / `confirm` / `high_risk` (default: `confirm`) |
+| `timeout_seconds` | — | Default: `30` |
+
+Configure additional plugin directories via `plugin_dirs` in `.proxima/config.yaml`:
+
+```yaml
+plugin_dirs:
+  - .proxima/plugins          # default
+  - /shared/team-plugins      # extra dirs
+```
 
 ---
 
@@ -372,14 +434,40 @@ The following items are planned for future releases as minor additions in v1:
 ### V1.2.0 — Expanded tools and providers
 - **Additional cloud providers** — OpenAI, Gemini, Groq, Mistral (same `LLMProvider` interface, new adapters)
 - **Local providers** — LM Studio and llama.cpp in addition to Ollama
-- **`delete_file` tool** — high-risk level, requires typed CONFIRM
+- **`delete_file` tool** — ✅ shipped: high-risk level, requires typed CONFIRM
 - **`git` tools** — ✅ shipped: `git_status`, `git_diff`, `git_log`, `git_add`, `git_commit`, `git_reset`
 - **Subagent support** — ✅ shipped: `delegate_to_subagent` with `code_analyzer`, `refactor`, and `test` specialist agents
+- **`find_references` tool** — ✅ shipped: cross-file symbol reference finder
+- **`get_imports` tool** — ✅ shipped: import graph extractor for a single file
+- **Plugin system** — ✅ shipped: drop-in shell/binary tools via `.proxima/plugins/<name>/plugin.json`
 
-### V1.3.0 — Intelligence and search
-- **AST-aware search** — query code structure (functions, classes, imports) without regex
+### V1.3.0 — Official plugin distribution
+
+Install community and official plugins with a single command:
+
+```bash
+proxima plugin list
+proxima plugin install word-count
+proxima plugin install jira-search
+```
+
+Or from inside the REPL: `/plugin install word-count`
+
+**How it works:**
+- Official plugins live in `plugins/` in this repo and are published as zip assets on every release alongside a signed `catalog.json`
+- `proxima plugin install <name>` downloads the zip, verifies its SHA-256 checksum, and installs it to `~/.proxima/plugins/` (user-global, visible in every project)
+- Works offline gracefully — existing installed plugins still load, install commands show a clear error
+- Manual drop-in (copying a directory to `.proxima/plugins/`) always remains supported
+
+**CI/CD additions for this milestone:**
+- Release workflow packages each `plugins/<name>/` as a zip, generates `catalog.json` with checksums, and uploads both alongside the binary
+- CI validates every official `plugin.json` against the descriptor schema on every push
+
+### V1.4.0 — Intelligence
 - **Semantic search** — embedding-based file retrieval for large codebases
-- **Plugin tools** — load third-party tools from a `~/.proxima/plugins/` directory
+- **Cross-session memory** — lightweight local store for persistent context
+- **PR description generation** — from git diff
+- **Community plugin registry** — third-party plugins at a separate catalogue URL
 
 ---
 

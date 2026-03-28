@@ -62,7 +62,7 @@ void main() {
 
   setUp(() {
     renderer = FakeRenderer();
-    handler = SlashCommandHandler(renderer);
+    handler = SlashCommandHandler(renderer, isTty: () => false);
     session = makeSession();
     clearCalled = false;
     modelSwitchArg = null;

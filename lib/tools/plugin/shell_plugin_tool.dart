@@ -45,8 +45,13 @@ class ShellPluginTool implements ProximaTool {
       [],
       workingDirectory: workingDir,
     );
-    process.stdin.write(jsonEncode(args));
-    await process.stdin.close();
+    try {
+      process.stdin.write(jsonEncode(args));
+      await process.stdin.close();
+    } catch (_) {
+      // Process may have exited before reading stdin (e.g. ignores it).
+      // The exit code check below will surface the actual failure.
+    }
 
     final stdoutFuture = process.stdout.transform(utf8.decoder).join();
     final stderrFuture = process.stderr.transform(utf8.decoder).join();

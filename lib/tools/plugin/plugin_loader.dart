@@ -77,20 +77,23 @@ class PluginLoader {
       return null;
     }
 
-    // Check executable bit on POSIX.
-    try {
-      final stat = execFile.statSync();
-      // mode bits: owner execute = 0x40, group = 0x8, other = 0x1
-      const execBits = 0x40 | 0x8 | 0x1;
-      if ((stat.mode & execBits) == 0) {
-        stderr.writeln(
-          '[proxima] Warning: plugin executable is not executable: $execPath',
-        );
+    // Check executable bit on POSIX. Windows NTFS has no Unix mode bits
+    // (stat.mode is always 0), so skip this check there.
+    if (!Platform.isWindows) {
+      try {
+        final stat = execFile.statSync();
+        // mode bits: owner execute = 0x40, group = 0x8, other = 0x1
+        const execBits = 0x40 | 0x8 | 0x1;
+        if ((stat.mode & execBits) == 0) {
+          stderr.writeln(
+            '[proxima] Warning: plugin executable is not executable: $execPath',
+          );
+          return null;
+        }
+      } catch (_) {
+        // stat failed — skip
         return null;
       }
-    } catch (_) {
-      // stat failed — skip
-      return null;
     }
 
     final riskLevel = _parseRiskLevel(descriptor['risk_level'] as String?);

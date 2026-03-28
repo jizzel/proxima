@@ -17,12 +17,33 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  /// Creates a plugin in [pluginsRoot]/<name>/ with the given script content
-  /// and plugin.json descriptor.
-  Future<Directory> createPlugin(
+  /// Returns platform-appropriate script filename and content.
+  ///
+  /// On Windows: writes a `.bat` file.
+  /// On POSIX:   writes a `.sh` file and chmod +x it.
+  Future<String> writeScript(
+    Directory pluginDir,
+    String posixScript, {
+    String windowsScript = '@echo off\r\necho hello world',
+  }) async {
+    if (Platform.isWindows) {
+      final f = File('${pluginDir.path}/run.bat');
+      await f.writeAsString(windowsScript);
+      return 'run.bat';
+    } else {
+      final f = File('${pluginDir.path}/run.sh');
+      await f.writeAsString(posixScript);
+      await Process.run('chmod', ['+x', f.path]);
+      return 'run.sh';
+    }
+  }
+
+  /// Creates a plugin in [pluginsRoot]/<name>/ with platform-appropriate script.
+  Future<({Directory dir, String execName})> createPlugin(
     Directory pluginsRoot,
     String name, {
-    required String script,
+    required String posixScript,
+    String? windowsScript,
     String riskLevel = 'safe',
     int timeoutSeconds = 10,
     Map<String, dynamic>? inputSchema,
@@ -30,16 +51,18 @@ void main() {
     final pluginDir = Directory('${pluginsRoot.path}/$name');
     await pluginDir.create(recursive: true);
 
-    final scriptFile = File('${pluginDir.path}/run.sh');
-    await scriptFile.writeAsString(script);
-    await Process.run('chmod', ['+x', scriptFile.path]);
+    final execName = await writeScript(
+      pluginDir,
+      posixScript,
+      windowsScript: windowsScript ?? '@echo off\r\necho hello world',
+    );
 
     final descriptor = {
       'name': name,
       'description': 'Test plugin $name',
       'risk_level': riskLevel,
       'timeout_seconds': timeoutSeconds,
-      'executable': 'run.sh',
+      'executable': execName,
       'input_schema':
           inputSchema ??
           {
@@ -53,70 +76,91 @@ void main() {
       '${pluginDir.path}/plugin.json',
     ).writeAsString(jsonEncode(descriptor));
 
-    return pluginDir;
+    return (dir: pluginDir, execName: execName);
   }
 
-  // ── ShellPluginTool ─────────────────────────────────────────────────────────
+  // ── ShellPluginTool — execution tests (POSIX only) ─────────────────────────
+  // Windows cannot run .sh scripts without WSL. The plugin system works on
+  // Windows with .bat/.exe plugins; execution is tested manually there.
 
   group('ShellPluginTool', () {
-    test('executes script and returns trimmed stdout', () async {
-      final pluginsRoot = Directory('${tempDir.path}/plugins');
-      await createPlugin(
-        pluginsRoot,
-        'echo_tool',
-        script: '#!/bin/sh\necho "hello world"',
-      );
+    test(
+      'executes script and returns trimmed stdout',
+      () async {
+        final pluginsRoot = Directory('${tempDir.path}/plugins');
+        final p = await createPlugin(
+          pluginsRoot,
+          'echo_tool',
+          posixScript: '#!/bin/sh\necho "hello world"',
+        );
 
-      final tool = ShellPluginTool(
-        name: 'echo_tool',
-        description: 'echoes',
-        riskLevel: RiskLevel.safe,
-        inputSchema: {},
-        executable: '${pluginsRoot.path}/echo_tool/run.sh',
-        timeoutSeconds: 10,
-      );
+        final tool = ShellPluginTool(
+          name: 'echo_tool',
+          description: 'echoes',
+          riskLevel: RiskLevel.safe,
+          inputSchema: {},
+          executable: '${p.dir.path}/${p.execName}',
+          timeoutSeconds: 10,
+        );
 
-      final result = await tool.execute({}, tempDir.path);
-      expect(result, 'hello world');
-    });
+        final result = await tool.execute({}, tempDir.path);
+        expect(result, 'hello world');
+      },
+      testOn: '!windows',
+    );
 
-    test('passes args as JSON on stdin', () async {
-      final pluginsRoot = Directory('${tempDir.path}/plugins');
-      await createPlugin(pluginsRoot, 'stdin_tool', script: '#!/bin/sh\ncat');
+    test(
+      'passes args as JSON on stdin',
+      () async {
+        final pluginsRoot = Directory('${tempDir.path}/plugins');
+        final p = await createPlugin(
+          pluginsRoot,
+          'stdin_tool',
+          posixScript: '#!/bin/sh\ncat',
+        );
 
-      final tool = ShellPluginTool(
-        name: 'stdin_tool',
-        description: 'reads stdin',
-        riskLevel: RiskLevel.safe,
-        inputSchema: {},
-        executable: '${pluginsRoot.path}/stdin_tool/run.sh',
-        timeoutSeconds: 10,
-      );
+        final tool = ShellPluginTool(
+          name: 'stdin_tool',
+          description: 'reads stdin',
+          riskLevel: RiskLevel.safe,
+          inputSchema: {},
+          executable: '${p.dir.path}/${p.execName}',
+          timeoutSeconds: 10,
+        );
 
-      final result = await tool.execute({'key': 'value'}, tempDir.path);
-      final decoded = jsonDecode(result) as Map;
-      expect(decoded['key'], 'value');
-    });
+        final result = await tool.execute({'key': 'value'}, tempDir.path);
+        final decoded = jsonDecode(result) as Map;
+        expect(decoded['key'], 'value');
+      },
+      testOn: '!windows',
+    );
 
-    test('throws ToolError on non-zero exit code', () async {
-      final pluginsRoot = Directory('${tempDir.path}/plugins');
-      await createPlugin(
-        pluginsRoot,
-        'fail_tool',
-        script: '#!/bin/sh\necho "error msg" >&2\nexit 1',
-      );
+    test(
+      'throws ToolError on non-zero exit code',
+      () async {
+        final pluginsRoot = Directory('${tempDir.path}/plugins');
+        final p = await createPlugin(
+          pluginsRoot,
+          'fail_tool',
+          posixScript: '#!/bin/sh\necho "error msg" >&2\nexit 1',
+        );
 
-      final tool = ShellPluginTool(
-        name: 'fail_tool',
-        description: 'fails',
-        riskLevel: RiskLevel.safe,
-        inputSchema: {},
-        executable: '${pluginsRoot.path}/fail_tool/run.sh',
-        timeoutSeconds: 10,
-      );
+        final tool = ShellPluginTool(
+          name: 'fail_tool',
+          description: 'fails',
+          riskLevel: RiskLevel.safe,
+          inputSchema: {},
+          executable: '${p.dir.path}/${p.execName}',
+          timeoutSeconds: 10,
+        );
 
-      expect(() => tool.execute({}, tempDir.path), throwsA(isA<ToolError>()));
-    });
+        expect(
+          () => tool.execute({}, tempDir.path),
+          throwsA(isA<ToolError>()),
+        );
+      },
+      testOn: '!windows',
+    );
 
     test('dryRun returns preview with args', () async {
       final tool = ShellPluginTool(
@@ -159,7 +203,12 @@ void main() {
   group('PluginLoader', () {
     test('loads a valid plugin', () async {
       final pluginsRoot = Directory('${tempDir.path}/plugins');
-      await createPlugin(pluginsRoot, 'hello', script: '#!/bin/sh\necho hi');
+      await createPlugin(
+        pluginsRoot,
+        'hello',
+        posixScript: '#!/bin/sh\necho hi',
+        windowsScript: '@echo off\r\necho hi',
+      );
 
       final tools = await PluginLoader.load([pluginsRoot.path], tempDir.path);
       expect(tools.length, 1);
@@ -172,7 +221,8 @@ void main() {
       await createPlugin(
         pluginsDir,
         'rel_plugin',
-        script: '#!/bin/sh\necho ok',
+        posixScript: '#!/bin/sh\necho ok',
+        windowsScript: '@echo off\r\necho ok',
       );
 
       final tools = await PluginLoader.load(['.proxima/plugins'], tempDir.path);
@@ -237,7 +287,8 @@ void main() {
       await createPlugin(
         pluginsRoot,
         'risky',
-        script: '#!/bin/sh\necho ok',
+        posixScript: '#!/bin/sh\necho ok',
+        windowsScript: '@echo off\r\necho ok',
         riskLevel: 'high_risk',
       );
 
@@ -251,7 +302,8 @@ void main() {
       await createPlugin(
         pluginsRoot,
         'unknown_risk',
-        script: '#!/bin/sh\necho ok',
+        posixScript: '#!/bin/sh\necho ok',
+        windowsScript: '@echo off\r\necho ok',
         riskLevel: 'whatever',
       );
 
@@ -263,8 +315,18 @@ void main() {
     test('loads from multiple plugin dirs', () async {
       final dir1 = Directory('${tempDir.path}/plugins1');
       final dir2 = Directory('${tempDir.path}/plugins2');
-      await createPlugin(dir1, 'plugin_a', script: '#!/bin/sh\necho a');
-      await createPlugin(dir2, 'plugin_b', script: '#!/bin/sh\necho b');
+      await createPlugin(
+        dir1,
+        'plugin_a',
+        posixScript: '#!/bin/sh\necho a',
+        windowsScript: '@echo off\r\necho a',
+      );
+      await createPlugin(
+        dir2,
+        'plugin_b',
+        posixScript: '#!/bin/sh\necho b',
+        windowsScript: '@echo off\r\necho b',
+      );
 
       final tools = await PluginLoader.load([
         dir1.path,

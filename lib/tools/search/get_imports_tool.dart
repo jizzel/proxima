@@ -245,7 +245,9 @@ class GetImportsTool implements ProximaTool {
       for (final spec in grouped[cat]!) {
         if (resolvePaths && (cat == '[local]')) {
           final resolved = p.normalize(p.join(fileDir, spec));
-          final rel = p.relative(resolved, from: workingDir);
+          // Always use forward slashes in output regardless of host OS.
+          final rel = p.relative(resolved, from: workingDir)
+              .replaceAll(r'\', '/');
           buf.writeln('  $spec  →  $rel   (resolved)');
         } else {
           buf.writeln('  $spec');

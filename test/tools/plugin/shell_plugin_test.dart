@@ -84,83 +84,68 @@ void main() {
   // Windows with .bat/.exe plugins; execution is tested manually there.
 
   group('ShellPluginTool', () {
-    test(
-      'executes script and returns trimmed stdout',
-      () async {
-        final pluginsRoot = Directory('${tempDir.path}/plugins');
-        final p = await createPlugin(
-          pluginsRoot,
-          'echo_tool',
-          posixScript: '#!/bin/sh\necho "hello world"',
-        );
+    test('executes script and returns trimmed stdout', () async {
+      final pluginsRoot = Directory('${tempDir.path}/plugins');
+      final p = await createPlugin(
+        pluginsRoot,
+        'echo_tool',
+        posixScript: '#!/bin/sh\necho "hello world"',
+      );
 
-        final tool = ShellPluginTool(
-          name: 'echo_tool',
-          description: 'echoes',
-          riskLevel: RiskLevel.safe,
-          inputSchema: {},
-          executable: '${p.dir.path}/${p.execName}',
-          timeoutSeconds: 10,
-        );
+      final tool = ShellPluginTool(
+        name: 'echo_tool',
+        description: 'echoes',
+        riskLevel: RiskLevel.safe,
+        inputSchema: {},
+        executable: '${p.dir.path}/${p.execName}',
+        timeoutSeconds: 10,
+      );
 
-        final result = await tool.execute({}, tempDir.path);
-        expect(result, 'hello world');
-      },
-      testOn: '!windows',
-    );
+      final result = await tool.execute({}, tempDir.path);
+      expect(result, 'hello world');
+    }, testOn: '!windows');
 
-    test(
-      'passes args as JSON on stdin',
-      () async {
-        final pluginsRoot = Directory('${tempDir.path}/plugins');
-        final p = await createPlugin(
-          pluginsRoot,
-          'stdin_tool',
-          posixScript: '#!/bin/sh\ncat',
-        );
+    test('passes args as JSON on stdin', () async {
+      final pluginsRoot = Directory('${tempDir.path}/plugins');
+      final p = await createPlugin(
+        pluginsRoot,
+        'stdin_tool',
+        posixScript: '#!/bin/sh\ncat',
+      );
 
-        final tool = ShellPluginTool(
-          name: 'stdin_tool',
-          description: 'reads stdin',
-          riskLevel: RiskLevel.safe,
-          inputSchema: {},
-          executable: '${p.dir.path}/${p.execName}',
-          timeoutSeconds: 10,
-        );
+      final tool = ShellPluginTool(
+        name: 'stdin_tool',
+        description: 'reads stdin',
+        riskLevel: RiskLevel.safe,
+        inputSchema: {},
+        executable: '${p.dir.path}/${p.execName}',
+        timeoutSeconds: 10,
+      );
 
-        final result = await tool.execute({'key': 'value'}, tempDir.path);
-        final decoded = jsonDecode(result) as Map;
-        expect(decoded['key'], 'value');
-      },
-      testOn: '!windows',
-    );
+      final result = await tool.execute({'key': 'value'}, tempDir.path);
+      final decoded = jsonDecode(result) as Map;
+      expect(decoded['key'], 'value');
+    }, testOn: '!windows');
 
-    test(
-      'throws ToolError on non-zero exit code',
-      () async {
-        final pluginsRoot = Directory('${tempDir.path}/plugins');
-        final p = await createPlugin(
-          pluginsRoot,
-          'fail_tool',
-          posixScript: '#!/bin/sh\necho "error msg" >&2\nexit 1',
-        );
+    test('throws ToolError on non-zero exit code', () async {
+      final pluginsRoot = Directory('${tempDir.path}/plugins');
+      final p = await createPlugin(
+        pluginsRoot,
+        'fail_tool',
+        posixScript: '#!/bin/sh\necho "error msg" >&2\nexit 1',
+      );
 
-        final tool = ShellPluginTool(
-          name: 'fail_tool',
-          description: 'fails',
-          riskLevel: RiskLevel.safe,
-          inputSchema: {},
-          executable: '${p.dir.path}/${p.execName}',
-          timeoutSeconds: 10,
-        );
+      final tool = ShellPluginTool(
+        name: 'fail_tool',
+        description: 'fails',
+        riskLevel: RiskLevel.safe,
+        inputSchema: {},
+        executable: '${p.dir.path}/${p.execName}',
+        timeoutSeconds: 10,
+      );
 
-        expect(
-          () => tool.execute({}, tempDir.path),
-          throwsA(isA<ToolError>()),
-        );
-      },
-      testOn: '!windows',
-    );
+      expect(() => tool.execute({}, tempDir.path), throwsA(isA<ToolError>()));
+    }, testOn: '!windows');
 
     test('dryRun returns preview with args', () async {
       final tool = ShellPluginTool(

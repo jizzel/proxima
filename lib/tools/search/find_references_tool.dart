@@ -184,8 +184,9 @@ class FindReferencesTool implements ProximaTool {
       if (hits.length >= maxResults) return;
       final line = lines[i];
       if (!wordBoundary.hasMatch(line)) continue;
-      if (excludeDefinition && _isDefinition(line, definitionPatterns))
+      if (excludeDefinition && _isDefinition(line, definitionPatterns)) {
         continue;
+      }
 
       final content = line.trim();
       final capped = content.length > 120

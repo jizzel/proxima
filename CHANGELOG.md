@@ -11,6 +11,24 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+#### V1.2 Tools — `find_references`, `get_imports`, Plugin System
+
+- **`find_references` tool** (`lib/tools/search/find_references_tool.dart`, `safe`) — finds all usages of a symbol across the codebase using `\b<symbol>\b` word-boundary matching. Supports `path` scoping, `file_extensions` filter, `exclude_definition` flag (skips definition lines using the same heuristics as `search_symbol`), and `max_results` (default 100). Skips `.git`, `node_modules`, `build`, `.dart_tool`, `.pub-cache`, and generated files. Output: `file:line  content` lines followed by a `Found N references in M files.` summary.
+
+- **`get_imports` tool** (`lib/tools/search/get_imports_tool.dart`, `safe`) — parses all import/require statements from a single file and categorises them by source type. Supports Dart (`[dart]`/`[package]`/`[local]`), JS/TS (`[node]`/`[local]`), Python (`[stdlib]`/`[local]`), and Go (`[stdlib]`/`[external]`). `resolve_paths: true` expands local imports to project-relative paths. Throws typed `ToolError(notFound)` when the file does not exist; `ToolError(parseError)` for binary files or unsupported extensions.
+
+- **Plugin system** — shell/binary drop-in tools via `.proxima/plugins/<name>/`:
+  - `ShellPluginTool` (`lib/tools/plugin/shell_plugin_tool.dart`) — wraps any executable as a `ProximaTool`; passes args as JSON on stdin, reads result from stdout, enforces configurable `timeout_seconds`; non-zero exit → `ToolError`
+  - `PluginLoader` (`lib/tools/plugin/plugin_loader.dart`) — `load(dirs, workingDir)` discovers plugin directories, validates `plugin.json` (required fields: `name`, `description`, `executable`, `input_schema`), checks the executable exists and has the execute bit, parses `risk_level` string → `RiskLevel` (defaults to `confirm` for unrecognised values); logs startup warnings for invalid plugins and never throws
+  - `ProximaConfig.pluginDirs` field — `List<String>`, default `['.proxima/plugins']`; parsed from `plugin_dirs` YAML key; included in `copyWith()`
+  - `_buildToolRegistry()` in `repl.dart` is now `async`; loads plugins after all built-ins; silently skips any plugin whose name conflicts with a built-in tool (built-in wins)
+
+- **Example plugin** (`.proxima/plugins/word-count/`) — fully annotated reference implementation; `run.sh` demonstrates the stdin/stdout/exit-code protocol with inline comments; `README.md` documents how to write, test, and register plugins; intended as a copy-paste starting point for community plugins
+
+#### Roadmap — V1.3 Official Plugin Distribution (planned, not yet implemented)
+
+- **342 tests total** (up from 237 — 105 new tests across `find_references_test.dart`, `get_imports_test.dart`, `test/tools/plugin/shell_plugin_test.dart`)
+
 #### Terminal UX — Rich Feedback & Activity Indicators
 - `AgentCallbacks.onIterationStart(iteration, maxIterations)` — called at the start of each loop iteration; `Renderer` uses it to show `⠋ Thinking… [N/10]` spinner with iteration depth between tool calls
 - `AgentCallbacks.onToolExecuting(toolCall)` — fires immediately before tool execution (after permission grant); `Renderer` shows `  ◆ Reading core/session.dart…` activity line

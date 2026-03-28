@@ -15,8 +15,10 @@ import '../tools/tool_registry.dart';
 /// Handles /commands typed in the REPL.
 class SlashCommandHandler {
   final Renderer _renderer;
+  final bool Function() _isTty;
 
-  SlashCommandHandler(this._renderer);
+  SlashCommandHandler(this._renderer, {bool Function()? isTty})
+    : _isTty = isTty ?? (() => stdout.hasTerminal);
 
   /// Returns true if input was a slash command (consumed).
   /// Returns false if input should be passed to the agent.
@@ -127,7 +129,7 @@ class SlashCommandHandler {
     // Use cached list first; only do a live fetch in interactive (TTY) mode
     // to avoid blocking non-interactive callers (tests, piped output, etc.).
     var ollamaModels = cachedOllamaModels;
-    if (ollamaModels.isEmpty && stdout.hasTerminal) {
+    if (ollamaModels.isEmpty && _isTty()) {
       final ollamaBaseUrl =
           Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
       ollamaModels = await OllamaProvider(
@@ -172,7 +174,7 @@ class SlashCommandHandler {
 
     // Non-interactive fallback: print a plain list when stdout is not a TTY
     // (e.g. during unit tests or when output is piped).
-    if (!stdout.hasTerminal) {
+    if (!_isTty()) {
       _renderer.print('Current model: $currentModel');
       _renderer.print('');
       for (final m in models) {
@@ -310,7 +312,7 @@ Slash commands:
     void Function(SessionMode mode)? onModeSwitch,
   ) {
     if (arg.isEmpty) {
-      if (!stdout.hasTerminal) {
+      if (!_isTty()) {
         _renderer.printDim('  mode: ${session.mode.name}');
         return;
       }

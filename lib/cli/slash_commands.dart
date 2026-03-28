@@ -18,7 +18,7 @@ class SlashCommandHandler {
   final bool Function() _isTty;
 
   SlashCommandHandler(this._renderer, {bool Function()? isTty})
-      : _isTty = isTty ?? (() => stdout.hasTerminal);
+    : _isTty = isTty ?? (() => stdout.hasTerminal);
 
   /// Returns true if input was a slash command (consumed).
   /// Returns false if input should be passed to the agent.

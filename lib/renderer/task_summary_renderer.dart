@@ -21,10 +21,23 @@ class TaskSummaryRenderer {
 
   /// Shows the stuck dialog and returns true if the user wants to continue,
   /// false to abort.
-  static bool renderStuck(List<ToolCall> recentCalls) {
+  static bool renderStuck(
+    List<ToolCall> recentCalls, {
+    String reason = 'stuck',
+  }) {
     stdout.writeln('');
-    stdout.writeln(boldYellow('⚠  Agent appears stuck'));
-    stdout.writeln(yellow('   Repeated tool calls detected:'));
+    if (reason == 'spinning') {
+      stdout.writeln(boldYellow('⚠  Agent is reading without making progress'));
+      stdout.writeln(
+        yellow(
+          '   Last ${recentCalls.length} calls were all read-only — '
+          'the agent may be unsure how to proceed:',
+        ),
+      );
+    } else {
+      stdout.writeln(boldYellow('⚠  Agent appears stuck'));
+      stdout.writeln(yellow('   Repeated tool calls detected:'));
+    }
     for (final call in recentCalls) {
       stdout.writeln(dim('   → ${call.tool}(${call.args})'));
     }

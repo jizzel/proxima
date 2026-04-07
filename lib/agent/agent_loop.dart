@@ -21,9 +21,10 @@ abstract class AgentCallbacks {
   void onClarify(String question);
   void onError(String message);
 
-  /// Called when the agent is stuck (repeated tool calls).
-  /// Returns true to continue the agent loop, false to abort.
-  Future<bool> onStuck(List<ToolCall> recentCalls);
+  /// Called when the agent is stuck (repeated tool calls) or spinning
+  /// (only read-only calls with no progress). [reason] is either
+  /// `'stuck'` or `'spinning'`. Returns true to continue, false to abort.
+  Future<bool> onStuck(List<ToolCall> recentCalls, {String reason = 'stuck'});
   void onChunk(String text);
 
   /// Called with token usage and cost after every completed turn.
@@ -198,7 +199,7 @@ class AgentLoop {
         callbacks.onToolCall(toolCall);
         toolLog.add(toolCall);
 
-        // Stuck detection.
+        // Stuck detection — identical calls.
         if (StuckDetector.isStuck(toolLog)) {
           final shouldContinue = await callbacks.onStuck(
             toolLog.sublist(toolLog.length - 3),
@@ -208,6 +209,19 @@ class AgentLoop {
             return session;
           }
           // User chose to continue — reset the tool log to allow progress.
+          toolLog.clear();
+        }
+
+        // Spinning detection — only read-only calls, no mutations.
+        if (StuckDetector.isSpinning(toolLog)) {
+          final shouldContinue = await callbacks.onStuck(
+            toolLog.sublist(toolLog.length - StuckDetector.spinWindow),
+            reason: 'spinning',
+          );
+          if (!shouldContinue) {
+            session.status = TaskStatus.failed;
+            return session;
+          }
           toolLog.clear();
         }
 

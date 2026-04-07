@@ -8,8 +8,12 @@ class StuckDetector {
   static const _spinWindow = 6;
 
   /// Exposed for callers that need to slice the log for display.
+  static const stuckWindow = _defaultWindow;
   static const spinWindow = _spinWindow;
 
+  // TODO(future): derive this set from ProximaTool metadata (e.g. a
+  // `isMutating` property) so new read-only tools are picked up automatically
+  // without updating this list.
   /// Read-only tools that produce no observable side effects.
   static const _readOnlyTools = {
     'read_file',

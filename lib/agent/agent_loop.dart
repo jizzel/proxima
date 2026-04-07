@@ -202,7 +202,7 @@ class AgentLoop {
         // Stuck detection — identical calls.
         if (StuckDetector.isStuck(toolLog)) {
           final shouldContinue = await callbacks.onStuck(
-            toolLog.sublist(toolLog.length - 3),
+            toolLog.sublist(toolLog.length - StuckDetector.stuckWindow),
           );
           if (!shouldContinue) {
             session.status = TaskStatus.failed;

@@ -30,6 +30,37 @@ class RunCommandTool implements ProximaTool {
     'required': ['command'],
   };
 
+  /// Terminates [process] and any children it spawned.
+  ///
+  /// `process.kill()` alone is not enough on Windows: `cmd /c <command>`
+  /// launches the command as a *separate* process, so killing the shell leaves
+  /// it running — holding the working directory open and continuing work the
+  /// user was told had stopped. `taskkill /T` ends the whole tree.
+  ///
+  /// On POSIX `bash -c` execs into the command, so killing the shell is
+  /// sufficient.
+  static Future<void> killProcessTree(Process process) async {
+    if (Platform.isWindows) {
+      try {
+        await Process.run('taskkill', [
+          '/pid',
+          '${process.pid}',
+          '/T',
+          '/F',
+        ]).timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Fall through to the direct kill below.
+      }
+    }
+    process.kill(ProcessSignal.sigkill);
+    // Wait for the handle to be released before a caller tries to remove the
+    // working directory — Windows refuses to delete one still held open.
+    await process.exitCode.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => -1,
+    );
+  }
+
   /// Gathers stdout, stderr, and the exit code from a started [process],
   /// producing the same shape `Process.run` would have returned.
   static Future<ProcessResult> collect(Process process) async {
@@ -92,15 +123,7 @@ class RunCommandTool implements ProximaTool {
 
       return output.toString().trim();
     } on TimeoutException {
-      // Kill the whole process tree; the shell may have spawned children.
-      process.kill(ProcessSignal.sigkill);
-      // Give the OS a moment to release handles before the caller (or a test
-      // tearDown) tries to remove the working directory — Windows refuses to
-      // delete a directory a live process still holds open.
-      await process.exitCode.timeout(
-        const Duration(seconds: 2),
-        onTimeout: () => -1,
-      );
+      await killProcessTree(process);
       throw ToolError(
         name,
         'Command timed out after ${timeoutSeconds}s: $command',

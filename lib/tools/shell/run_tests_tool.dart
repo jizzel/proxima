@@ -86,11 +86,9 @@ class RunTestsTool implements ProximaTool {
 
       return output.toString().trim();
     } on TimeoutException {
-      process?.kill(ProcessSignal.sigkill);
-      await process?.exitCode.timeout(
-        const Duration(seconds: 2),
-        onTimeout: () => -1,
-      );
+      if (process != null) {
+        await RunCommandTool.killProcessTree(process);
+      }
       throw ToolError(
         name,
         'Tests timed out after 120s',

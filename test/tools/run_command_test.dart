@@ -72,9 +72,12 @@ void main() {
       // kept executing, and on Windows held the working directory open so
       // cleanup failed.
       final marker = p.join(tempDir.path, 'orphan_marker');
+      // The delay must outlast the assertion below, or the child exits on its
+      // own and the test passes even when the tree is never killed — which is
+      // exactly how a Windows leak hid here before.
       final slowThenWrite = isWindows
-          ? 'ping -n 4 127.0.0.1 >nul & type nul > "$marker"'
-          : 'sleep 2; touch "$marker"';
+          ? 'ping -n 8 127.0.0.1 >nul & type nul > "$marker"'
+          : 'sleep 6; touch "$marker"';
 
       await expectLater(
         tool.execute({

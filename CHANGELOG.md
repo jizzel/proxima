@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.4.0] — 2026-08-29
+
 ### Added
 
 - **Update check on startup** (`lib/core/update_checker.dart`) — checks GitHub for a newer release at most once per 24 hours, in a fire-and-forget background fetch that never blocks startup and swallows every failure. When an update exists the notice offers the install command, skip-this-version (remembered in `~/.proxima/update_check.json`, and a later release is still announced), or remind-me-later. **Proxima never installs anything itself** — it has filesystem and shell access, so self-replacing its binary would make a compromised release channel equivalent to remote code execution; the user is given the command to run. Disable with `check_for_updates: false`; source builds (`dev`) never check. Version comparison is numeric, so `1.10.0` correctly beats `1.9.0`. The notice appears at the first prompt rather than before the header — the check is deliberately not awaited at startup, so consuming it there would read a still-pending result and drop the notice under any real network latency
@@ -314,7 +318,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/jizzel/proxima/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jizzel/proxima/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/jizzel/proxima/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jizzel/proxima/compare/v1.0.1...v1.1.0

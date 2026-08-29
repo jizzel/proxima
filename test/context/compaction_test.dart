@@ -93,7 +93,7 @@ void main() {
   group('Compaction.compact with fileCache', () {
     final budget = TokenBudget.calculate(10000);
 
-    test('passes fileCache through to deduplication', () {
+    test('passes fileCache through to deduplication', () async {
       final messages = [
         userMsg('read foo'),
         assistantToolMsg('read_file', {'path': 'foo.dart'}),
@@ -102,7 +102,7 @@ void main() {
         toolResultMsg('read_file', 'second read'),
         userMsg('done'),
       ];
-      final result = Compaction.compact(
+      final result = await Compaction.compact(
         messages,
         budget,
         'foo',
@@ -119,12 +119,12 @@ void main() {
       expect(toolResults.any((m) => m.content == 'second read'), isTrue);
     });
 
-    test('no fileCache — behaves identically to old compact', () {
+    test('no fileCache — behaves identically to old compact', () async {
       final messages = [
         userMsg('hi'),
         Message(role: MessageRole.assistant, content: 'hello'),
       ];
-      final result = Compaction.compact(messages, budget, 'hi');
+      final result = await Compaction.compact(messages, budget, 'hi');
       expect(result.length, 2);
     });
   });
@@ -166,6 +166,138 @@ void main() {
       ];
       final result = Compaction.truncateHistory(messages, 10000);
       expect(result.length, 2);
+    });
+  });
+  group('Compaction.compact with a summarizer', () {
+    final budget = TokenBudget.calculate(10000);
+
+    /// History large enough that Pass 2 must drop from the front.
+    List<Message> oversizedHistory() => [
+      for (var i = 0; i < 40; i++) ...[
+        userMsg('question $i ${"x" * 200}'),
+        Message(role: MessageRole.assistant, content: 'answer $i ${"y" * 200}'),
+      ],
+    ];
+
+    test('summarises the dropped messages and pins the summary', () async {
+      List<Message>? seen;
+      final result = await Compaction.compact(
+        oversizedHistory(),
+        budget,
+        'question',
+        summarizer: (dropped) async {
+          seen = dropped;
+          return '- read foo.dart\n- decided to use X';
+        },
+      );
+
+      expect(seen, isNotNull, reason: 'summarizer should have been called');
+      expect(seen!, isNotEmpty);
+      expect(
+        result.any((m) => m.content.contains('decided to use X')),
+        isTrue,
+        reason: 'summary must survive into the compacted history',
+      );
+    });
+
+    test('does not call the summarizer when nothing is dropped', () async {
+      var called = false;
+      final result = await Compaction.compact(
+        [userMsg('hi'), Message(role: MessageRole.assistant, content: 'hello')],
+        budget,
+        'hi',
+        summarizer: (dropped) async {
+          called = true;
+          return 'should not happen';
+        },
+      );
+
+      expect(called, isFalse, reason: 'no LLM cost on an under-budget turn');
+      expect(result.length, equals(2));
+    });
+
+    test('falls back to truncation when the summarizer returns null', () async {
+      final result = await Compaction.compact(
+        oversizedHistory(),
+        budget,
+        'question',
+        summarizer: (dropped) async => null,
+      );
+
+      expect(result, isNotEmpty);
+      expect(
+        result.any((m) => m.content.contains('Earlier context summary')),
+        isFalse,
+      );
+    });
+
+    test('falls back to truncation when the summarizer throws', () async {
+      final result = await Compaction.compact(
+        oversizedHistory(),
+        budget,
+        'question',
+        summarizer: (dropped) async => throw StateError('provider exploded'),
+      );
+
+      // A summariser failure must not fail the turn.
+      expect(result, isNotEmpty);
+      expect(
+        result.any((m) => m.content.contains('Earlier context summary')),
+        isFalse,
+      );
+    });
+
+    test('ignores a blank summary', () async {
+      final result = await Compaction.compact(
+        oversizedHistory(),
+        budget,
+        'question',
+        summarizer: (dropped) async => '   ',
+      );
+      expect(
+        result.any((m) => m.content.contains('Earlier context summary')),
+        isFalse,
+      );
+    });
+
+    test('keeps the compacted history within the history budget', () async {
+      // Regression: the summary was prepended *after* truncation, so a 512-token
+      // summary pushed the result back over conversationHistory on every
+      // compacted turn. Room is now reserved before truncating.
+      final result = await Compaction.compact(
+        oversizedHistory(),
+        budget,
+        'question',
+        summarizer: (dropped) async => 'Z' * 20000,
+      );
+
+      final tokens = result.fold<int>(
+        0,
+        (sum, m) => sum + estimateTokens(m.content),
+      );
+      expect(tokens, lessThanOrEqualTo(budget.conversationHistory));
+    });
+
+    test('clips a summary that overruns its reserve', () async {
+      final result = await Compaction.compact(
+        oversizedHistory(),
+        budget,
+        'question',
+        summarizer: (dropped) async => 'Z' * 20000,
+      );
+      expect(result.any((m) => m.content.contains('…')), isTrue);
+    });
+
+    test('without a summarizer behaves exactly as before', () async {
+      final messages = oversizedHistory();
+      final withNone = await Compaction.compact(messages, budget, 'question');
+      final explicitNull = await Compaction.compact(
+        messages,
+        budget,
+        'question',
+        summarizer: null,
+      );
+      expect(withNone.length, equals(explicitNull.length));
     });
   });
 }

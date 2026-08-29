@@ -37,6 +37,7 @@ import '../permissions/audit_log.dart';
 import '../permissions/permission_gate.dart';
 import '../context/context_builder.dart';
 import '../agent/agent_loop.dart';
+import '../agent/subagent_runner.dart';
 import '../agent/subagent_runner.dart' show SubagentRunner;
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
@@ -316,6 +317,13 @@ class ProximaRepl {
     final contextBuilder = ContextBuilder(
       _toolRegistry,
       contextWindow: _contextWindow,
+      // Summarise history that compaction has to drop, rather than losing it
+      // outright. Uses the active model; a failure falls back to truncation.
+      summarizer: _config.summarizeOnCompact
+          ? (dropped) => SubagentRunner(
+              provider: provider,
+            ).runSummarizer(messages: dropped, model: _activeModel)
+          : null,
     );
 
     _agentLoop = AgentLoop(

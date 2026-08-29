@@ -582,11 +582,11 @@ class AgentLoop {
 
       return (response, true);
     } catch (e) {
-      // An unreachable server fails complete() the same way — falling back
-      // only doubles the error output. Other stream failures (a mid-transfer
-      // drop, a malformed chunk) may well succeed via complete(), so those
-      // still fall back.
-      if (_isUnreachable(e)) rethrow;
+      // An unreachable server fails complete() the same way, so falling back
+      // only doubles the error output — *unless* a secondary provider is
+      // configured, in which case complete() is the only path that reaches it
+      // (FallbackProvider.stream deliberately rethrows for exactly this).
+      if (_isUnreachable(e) && !_provider.capabilities.hasFallback) rethrow;
       callbacks.onError('[debug] Streaming failed, falling back: $e');
       return (await _provider.complete(request), false);
     }

@@ -70,7 +70,7 @@ class ListFilesTool implements ProximaTool {
         if (matcher.isIgnored(rel, isDirectory: isDir)) continue;
         entities.add(entity);
         if (isDir && recursive) {
-          if (matcher.shouldPruneDir(p.basename(entity.path))) continue;
+          if (matcher.shouldPruneDir(rel)) continue;
           await walk(entity);
         }
       }

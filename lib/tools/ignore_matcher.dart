@@ -86,13 +86,19 @@ class IgnoreMatcher {
     return IgnoreMatcher._(rules, defaultSkipDirs);
   }
 
-  /// Whether a directory named [basename] should be pruned before descending.
+  /// Whether a directory should be pruned before descending into it.
+  ///
+  /// [relPath] is the directory's path relative to the working directory. It
+  /// is required for correctness, not convenience: a root-anchored rule such
+  /// as `/generated/` must match `generated` but *not* `lib/generated`, and a
+  /// basename alone cannot tell those apart.
   ///
   /// Used by the tools that walk recursively by hand, where pruning avoids the
   /// cost of walking the subtree at all.
-  bool shouldPruneDir(String basename) {
-    if (_skipDirs.contains(basename)) return true;
-    return _matches('$basename/', isDirectory: true);
+  bool shouldPruneDir(String relPath) {
+    final normalized = p.posix.normalize(relPath.replaceAll(r'\', '/'));
+    if (_skipDirs.contains(p.posix.basename(normalized))) return true;
+    return isIgnored(normalized, isDirectory: true);
   }
 
   /// Whether [relPath] (relative to the working directory, POSIX separators)
@@ -122,13 +128,13 @@ class IgnoreMatcher {
     var ignored = false;
     for (final rule in _rules) {
       if (!rule.matches(path)) continue;
-      // A directory-only rule (`cache/`) excludes the directory *and*
-      // everything beneath it. It only fails to apply when the match is the
-      // whole path and that path is known to be a file.
-      if (rule.directoryOnly &&
-          !isDirectory &&
-          !path.contains('/') &&
-          !path.endsWith('/')) {
+
+      // A directory-only rule (`cache/`) matches the directory and everything
+      // beneath it, but never a *file* named `cache`. Distinguish a match on
+      // the terminal component from a match on an ancestor: if the rule also
+      // matches a strict ancestor of this path, the path is a descendant of an
+      // ignored directory and is excluded whatever its own type.
+      if (rule.directoryOnly && !isDirectory && !rule.matchesAncestorOf(path)) {
         continue;
       }
       ignored = !rule.negated;
@@ -211,5 +217,17 @@ class _Rule {
         ? path.substring(0, path.length - 1)
         : path;
     return _regex.hasMatch(trimmed);
+  }
+
+  /// Whether this rule matches a strict ancestor directory of [path].
+  ///
+  /// Lets a directory-only rule exclude `cache/data.bin` (a descendant of the
+  /// matched directory) without excluding a file named `src/cache`.
+  bool matchesAncestorOf(String path) {
+    final parts = path.split('/');
+    for (var i = 1; i < parts.length; i++) {
+      if (_regex.hasMatch(parts.take(i).join('/'))) return true;
+    }
+    return false;
   }
 }

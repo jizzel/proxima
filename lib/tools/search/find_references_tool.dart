@@ -124,14 +124,12 @@ class FindReferencesTool implements ProximaTool {
       await for (final entity in dir.list(followLinks: false)) {
         if (hits.length >= maxResults) return;
 
-        final basename = p.basename(entity.path);
-
         if (entity is Directory) {
           // Pass the working-dir-relative path as well as the basename: a
           // path-qualified rule (`vendor/lib/`) can never match a bare name.
-          final relDir = p.relative(entity.path, from: workingDir);
-          if (_matcher().shouldPruneDir(basename) ||
-              _matcher().isIgnored(relDir, isDirectory: true)) {
+          if (_matcher().shouldPruneDir(
+            p.relative(entity.path, from: workingDir),
+          )) {
             continue;
           }
           await _walk(

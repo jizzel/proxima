@@ -198,4 +198,39 @@ void main() {
       expect(result, isNot(contains('excluded.dart')));
     });
   });
+  group('anchoring and directory-only precision', () {
+    test(
+      'a root-anchored rule does not prune nested same-named dirs',
+      () async {
+        // Regression: shouldPruneDir took a basename, so `/generated/` pruned
+        // `lib/generated` too — which git does not do.
+        final m = await matcherWith('/generated/\n');
+        expect(m.shouldPruneDir('generated'), isTrue);
+        expect(m.shouldPruneDir('lib/generated'), isFalse);
+      },
+    );
+
+    test('an unanchored rule still matches at any depth', () async {
+      final m = await matcherWith('generated/\n');
+      expect(m.shouldPruneDir('generated'), isTrue);
+      expect(m.shouldPruneDir('lib/generated'), isTrue);
+    });
+
+    test('a directory-only rule never matches a file of that name', () async {
+      // Regression: the guard treated any path containing '/' as a descendant,
+      // so `cache/` wrongly ignored a *file* at src/cache.
+      final m = await matcherWith('cache/\n');
+      expect(m.isIgnored('cache', isDirectory: true), isTrue);
+      expect(m.isIgnored('cache/data.bin'), isTrue);
+      expect(m.isIgnored('src/cache'), isFalse, reason: 'a file, not a dir');
+      expect(m.isIgnored('src/cache/x.bin'), isTrue, reason: 'descendant');
+    });
+
+    test('built-in skips still apply at any depth', () async {
+      final m = IgnoreMatcher.defaults();
+      expect(m.shouldPruneDir('node_modules'), isTrue);
+      expect(m.shouldPruneDir('packages/app/node_modules'), isTrue);
+      expect(m.isIgnored('lib/main.dart'), isFalse);
+    });
+  });
 }

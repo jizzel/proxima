@@ -434,6 +434,11 @@ class ProximaRepl {
       final trimmed = input.trim();
       if (trimmed.isEmpty) continue;
 
+      // Refresh before dispatch, not after: `/plan` and `/execute` run agent
+      // turns from inside handle(), so a later refresh would leave them using
+      // the defaults-only matcher.
+      await _refreshIgnoreMatcher();
+
       final wasCommand = await _slashCommands.handle(
         trimmed,
         _session,
@@ -454,8 +459,6 @@ class ProximaRepl {
 
       if (wasCommand) continue;
       if (!_running) break;
-
-      await _refreshIgnoreMatcher();
 
       // In plan mode, every prompt is treated as a /plan task.
       if (_replMode == _ReplMode.plan) {

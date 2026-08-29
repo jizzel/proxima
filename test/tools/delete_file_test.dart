@@ -47,8 +47,8 @@ void main() {
   });
 
   test('4. throws ToolError for missing file', () async {
-    expect(
-      () => tool.execute({'path': 'nonexistent.txt'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': 'nonexistent.txt'}, tempDir.path),
       throwsA(
         isA<ToolError>().having(
           (e) => e.message,
@@ -63,8 +63,8 @@ void main() {
     final subDir = Directory('${tempDir.path}/subdir');
     await subDir.create();
 
-    expect(
-      () => tool.execute({'path': 'subdir'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': 'subdir'}, tempDir.path),
       throwsA(
         isA<ToolError>().having(
           (e) => e.message,
@@ -76,8 +76,8 @@ void main() {
   });
 
   test('6. throws ToolError for path traversal', () async {
-    expect(
-      () => tool.execute({'path': '../outside.txt'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': '../outside.txt'}, tempDir.path),
       throwsA(
         isA<ToolError>().having(
           (e) => e.message,

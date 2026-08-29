@@ -51,8 +51,8 @@ void main() {
   });
 
   test('throws ToolError when nothing is staged', () async {
-    expect(
-      () => tool.execute({'message': 'empty commit'}, tempDir.path),
+    await expectLater(
+      tool.execute({'message': 'empty commit'}, tempDir.path),
       throwsA(isA<ToolError>()),
     );
   });

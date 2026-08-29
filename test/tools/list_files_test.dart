@@ -90,15 +90,15 @@ void main() {
     });
 
     test('rejects a path outside the working directory', () async {
-      expect(
-        () => tool.execute({'path': '../..'}, tempDir.path),
+      await expectLater(
+        tool.execute({'path': '../..'}, tempDir.path),
         throwsA(isA<ToolError>()),
       );
     });
 
     test('throws when the directory does not exist', () async {
-      expect(
-        () => tool.execute({'path': 'nope'}, tempDir.path),
+      await expectLater(
+        tool.execute({'path': 'nope'}, tempDir.path),
         throwsA(isA<ToolError>()),
       );
     });

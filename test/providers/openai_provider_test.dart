@@ -283,8 +283,8 @@ void main() {
 ''';
       final h = makeProvider(malformed);
 
-      expect(
-        () => h.provider.complete(
+      await expectLater(
+        h.provider.complete(
           requestWith(
             messages: [Message(role: MessageRole.user, content: 'hi')],
           ),
@@ -317,8 +317,8 @@ void main() {
         '{"error":{"message":"Incorrect API key provided"}}',
         statusCode: 401,
       );
-      expect(
-        () => h.provider.complete(
+      await expectLater(
+        h.provider.complete(
           requestWith(
             messages: [Message(role: MessageRole.user, content: 'hi')],
           ),
@@ -334,8 +334,8 @@ void main() {
         '{"error":{"message":"forbidden"}}',
         statusCode: 403,
       );
-      expect(
-        () => h.provider.complete(
+      await expectLater(
+        h.provider.complete(
           requestWith(
             messages: [Message(role: MessageRole.user, content: 'hi')],
           ),
@@ -351,8 +351,8 @@ void main() {
         '{"error":{"message":"slow down"}}',
         statusCode: 429,
       );
-      expect(
-        () => h.provider.complete(
+      await expectLater(
+        h.provider.complete(
           requestWith(
             messages: [Message(role: MessageRole.user, content: 'hi')],
           ),
@@ -365,8 +365,8 @@ void main() {
 
     test('maps a non-JSON error body to unknown', () async {
       final h = makeProvider('<html>502 Bad Gateway</html>', statusCode: 502);
-      expect(
-        () => h.provider.complete(
+      await expectLater(
+        h.provider.complete(
           requestWith(
             messages: [Message(role: MessageRole.user, content: 'hi')],
           ),
@@ -683,19 +683,22 @@ void main() {
       (request) async => throw http.ClientException('refused', request.url),
     );
 
-    test('complete() converts a transport failure to LLMError(network)', () {
-      final provider = OpenAIProvider(
-        model: 'gpt-4o',
-        apiKey: 'k',
-        client: deadClient(),
-      );
-      expect(
-        () => provider.complete(requestWith()),
-        throwsA(
-          isA<LLMError>().having((e) => e.kind, 'kind', LLMErrorKind.network),
-        ),
-      );
-    });
+    test(
+      'complete() converts a transport failure to LLMError(network)',
+      () async {
+        final provider = OpenAIProvider(
+          model: 'gpt-4o',
+          apiKey: 'k',
+          client: deadClient(),
+        );
+        await expectLater(
+          provider.complete(requestWith()),
+          throwsA(
+            isA<LLMError>().having((e) => e.kind, 'kind', LLMErrorKind.network),
+          ),
+        );
+      },
+    );
 
     test('stream() converts a transport failure to LLMError(network)', () {
       final provider = OpenAIProvider(

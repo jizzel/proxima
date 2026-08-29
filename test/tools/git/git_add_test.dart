@@ -43,15 +43,15 @@ void main() {
   });
 
   test('throws ToolError for path traversal', () async {
-    expect(
-      () => tool.execute({'path': '../escape.txt'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': '../escape.txt'}, tempDir.path),
       throwsA(isA<ToolError>()),
     );
   });
 
   test('throws ToolError if git add fails (non-existent file)', () async {
-    expect(
-      () => tool.execute({'path': 'nonexistent.dart'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': 'nonexistent.dart'}, tempDir.path),
       throwsA(isA<ToolError>()),
     );
   });

@@ -97,8 +97,8 @@ void main() {
     test('throws when old_str is absent', () async {
       await writeFile('a.txt', 'hello');
 
-      expect(
-        () => tool.execute({
+      await expectLater(
+        tool.execute({
           'path': 'a.txt',
           'old_str': 'missing',
           'new_str': 'x',
@@ -129,8 +129,8 @@ void main() {
     });
 
     test('throws when the file does not exist', () async {
-      expect(
-        () => tool.execute({
+      await expectLater(
+        tool.execute({
           'path': 'nope.txt',
           'old_str': 'a',
           'new_str': 'b',
@@ -140,8 +140,8 @@ void main() {
     });
 
     test('rejects a path outside the working directory', () async {
-      expect(
-        () => tool.execute({
+      await expectLater(
+        tool.execute({
           'path': '../escape.txt',
           'old_str': 'a',
           'new_str': 'b',

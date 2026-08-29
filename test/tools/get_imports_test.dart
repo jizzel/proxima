@@ -138,8 +138,8 @@ import '../core/types.dart';
   // ── Error handling ─────────────────────────────────────────────────────────
 
   test('throws ToolError when file not found', () async {
-    expect(
-      () => tool.execute({'path': 'nonexistent.dart'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': 'nonexistent.dart'}, tempDir.path),
       throwsA(
         isA<ToolError>().having(
           (e) => e.errorCode,
@@ -151,16 +151,16 @@ import '../core/types.dart';
   });
 
   test('throws ToolError for path outside workingDir', () async {
-    expect(
-      () => tool.execute({'path': '/etc/passwd'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': '/etc/passwd'}, tempDir.path),
       throwsA(isA<ToolError>()),
     );
   });
 
   test('throws ToolError for unsupported file type', () async {
     await writeFile('data.csv', 'a,b,c');
-    expect(
-      () => tool.execute({'path': 'data.csv'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': 'data.csv'}, tempDir.path),
       throwsA(
         isA<ToolError>().having(
           (e) => e.errorCode,

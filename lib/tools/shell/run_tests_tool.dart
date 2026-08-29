@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
 import '../tool_interface.dart';
+import 'run_command_tool.dart';
 import 'test_output_parser.dart';
 
 class RunTestsTool implements ProximaTool {
@@ -43,8 +44,8 @@ class RunTestsTool implements ProximaTool {
 
     try {
       final result = await Process.run(
-        'bash',
-        ['-c', command],
+        RunCommandTool.shellExecutable,
+        [...RunCommandTool.shellArgs, command],
         workingDirectory: workingDir,
         runInShell: false,
       ).timeout(const Duration(seconds: 120));

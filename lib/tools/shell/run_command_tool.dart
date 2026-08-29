@@ -29,6 +29,18 @@ class RunCommandTool implements ProximaTool {
     'required': ['command'],
   };
 
+  /// The shell used to run commands.
+  ///
+  /// Hardcoding `bash` broke every Windows install: `bash.exe` on Windows
+  /// resolves to the WSL launcher, which — with no distribution installed —
+  /// returns UTF-16 text explaining how to install one, and exit code 1. Every
+  /// `run_command` call failed that way, in the shipped binary as well as CI.
+  static String get shellExecutable => Platform.isWindows ? 'cmd' : 'bash';
+
+  /// Arguments preceding the command string for [shellExecutable].
+  static List<String> get shellArgs =>
+      Platform.isWindows ? const ['/c'] : const ['-c'];
+
   @override
   Future<String> execute(Map<String, dynamic> args, String workingDir) async {
     final command = args['command'] as String;
@@ -40,8 +52,8 @@ class RunCommandTool implements ProximaTool {
 
     try {
       final result = await Process.run(
-        'bash',
-        ['-c', command],
+        shellExecutable,
+        [...shellArgs, command],
         workingDirectory: workingDir,
         runInShell: false,
       ).timeout(Duration(seconds: timeoutSeconds));

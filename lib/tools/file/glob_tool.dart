@@ -78,9 +78,14 @@ class GlobTool implements ProximaTool {
       if (entity is File) {
         final relToWorking = p.relative(entity.path, from: workingDir);
         if (matcher.isIgnored(relToWorking)) continue;
-        final rel = p.relative(entity.path, from: baseDir);
+        // Glob patterns are written with forward slashes, so match against a
+        // POSIX-normalised path — otherwise `**/*.dart` never matches
+        // `lib\nested.dart` on Windows.
+        final rel = p
+            .relative(entity.path, from: baseDir)
+            .replaceAll(r'\', '/');
         if (regex.hasMatch(rel)) {
-          results.add(relToWorking);
+          results.add(relToWorking.replaceAll(r'\', '/'));
         }
       }
     }

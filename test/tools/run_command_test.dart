@@ -9,6 +9,16 @@ void main() {
   late Directory tempDir;
   late RunCommandTool tool;
 
+  // RunCommandTool runs cmd on Windows and bash elsewhere, so these use
+  // whichever syntax the active shell understands. Asserting on behaviour
+  // rather than a fixed command keeps Windows CI meaningful, not skipped.
+  final isWindows = Platform.isWindows;
+  final listDir = isWindows ? 'dir /b' : 'ls';
+  final echoStderr = isWindows ? 'echo oops 1>&2' : 'echo oops >&2';
+  // ping -n 6 waits ~5s on Windows; sleep 5 elsewhere.
+  final sleepLong = isWindows ? 'ping -n 6 127.0.0.1 >nul' : 'sleep 5';
+  final touchCmd = isWindows ? 'type nul >' : 'touch';
+
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('proxima_cmd_');
     tool = RunCommandTool();
@@ -29,14 +39,12 @@ void main() {
     test('runs in the working directory, not the process cwd', () async {
       await File(p.join(tempDir.path, 'marker.txt')).writeAsString('x');
 
-      final result = await tool.execute({'command': 'ls'}, tempDir.path);
+      final result = await tool.execute({'command': listDir}, tempDir.path);
       expect(result, contains('marker.txt'));
     });
 
     test('captures stderr', () async {
-      final result = await tool.execute({
-        'command': 'echo oops >&2',
-      }, tempDir.path);
+      final result = await tool.execute({'command': echoStderr}, tempDir.path);
       expect(result, contains('oops'));
     });
 
@@ -48,7 +56,7 @@ void main() {
     test('times out a long-running command', () async {
       expect(
         () => tool.execute({
-          'command': 'sleep 5',
+          'command': sleepLong,
           'timeout_seconds': 1,
         }, tempDir.path),
         throwsA(isA<ToolError>()),
@@ -85,13 +93,27 @@ void main() {
         final canary = File(p.join(tempDir.path, 'canary.txt'));
         try {
           await tool.execute({
-            'command': 'sudo touch ${canary.path}',
+            'command': 'sudo $touchCmd ${canary.path}',
           }, tempDir.path);
         } on ToolError {
           // expected
         }
         expect(await canary.exists(), isFalse);
       });
+    });
+
+    test('uses the platform shell, not a hardcoded bash', () {
+      // Regression: bash.exe on Windows resolves to the WSL launcher, which
+      // with no distro installed returns UTF-16 help text and exit code 1 —
+      // so every run_command call failed on the shipped Windows binary.
+      expect(
+        RunCommandTool.shellExecutable,
+        equals(Platform.isWindows ? 'cmd' : 'bash'),
+      );
+      expect(
+        RunCommandTool.shellArgs,
+        equals(Platform.isWindows ? ['/c'] : ['-c']),
+      );
     });
 
     test('is classified confirm — requires approval', () {
@@ -101,9 +123,9 @@ void main() {
     test('dryRun previews without executing', () async {
       final canary = File(p.join(tempDir.path, 'dry.txt'));
       final result = await tool.dryRun({
-        'command': 'touch ${canary.path}',
+        'command': '$touchCmd ${canary.path}',
       }, tempDir.path);
-      expect(result.preview, contains('touch'));
+      expect(result.preview, contains(canary.path));
       expect(await canary.exists(), isFalse);
     });
   });

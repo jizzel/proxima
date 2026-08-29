@@ -93,6 +93,16 @@ void main() {
       expect(lines, equals([...lines]..sort()));
     });
 
+    test('emits forward slashes on every platform', () async {
+      // Regression: glob patterns use '/', but the tool matched against native
+      // separators, so `**/*.dart` never matched `lib\\nested.dart` on Windows.
+      await writeFile('lib/nested.dart');
+
+      final result = await tool.execute({'pattern': '**/*.dart'}, tempDir.path);
+      expect(result, contains('lib/nested.dart'));
+      expect(result, isNot(contains(r'lib\nested.dart')));
+    });
+
     test('is classified safe', () {
       expect(tool.riskLevel, equals(RiskLevel.safe));
     });

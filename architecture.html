@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Proxima v3.0 — Architecture</title>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Courier New',monospace;background:#0d1117;color:#e6edf3;padding:24px}
+
+        .diagram{width:100%;max-width:680px;margin:0 auto}
+
+        .header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.1)}
+        .header-title{font-size:13px;font-weight:500;color:#e6edf3;letter-spacing:.04em}
+        .header-sub{font-size:11px;color:#8b949e}
+
+        .layer{width:100%;margin-bottom:4px;position:relative}
+
+        .box{border-radius:8px;padding:9px 14px;border:1px solid;display:flex;align-items:center;gap:0;position:relative;transition:opacity .15s}
+        .box-title{font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0}
+        .box-detail{font-size:10px;opacity:.72;margin-left:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .box-badge{margin-left:auto;flex-shrink:0;font-size:9px;font-weight:500;padding:2px 7px;border-radius:10px;letter-spacing:.04em;margin-left:10px}
+
+        .c-input   {background:rgba(83,74,183,0.12);border-color:rgba(83,74,183,0.35);color:#e6edf3}
+        .c-session {background:rgba(83,74,183,0.08);border-color:rgba(83,74,183,0.25);color:#e6edf3;border-style:dashed}
+        .c-agent   {background:rgba(15,110,86,0.12);border-color:rgba(15,110,86,0.40);color:#e6edf3}
+        .c-perm    {background:rgba(153,60,29,0.14);border-color:rgba(216,90,48,0.50);color:#e6edf3}
+        .c-tools   {background:rgba(186,117,23,0.10);border-color:rgba(186,117,23,0.35);color:#e6edf3}
+        .c-context {background:rgba(24,95,165,0.10);border-color:rgba(24,95,165,0.35);color:#e6edf3}
+        .c-error   {background:rgba(153,60,29,0.08);border-color:rgba(216,90,48,0.30);color:#e6edf3;border-style:dashed}
+        .c-render  {background:rgba(95,94,90,0.10);border-color:rgba(95,94,90,0.35);color:#e6edf3}
+
+        .badge-new  {background:rgba(127,119,221,0.25);color:#AFA9EC}
+        .badge-gap  {background:rgba(216,90,48,0.25);color:#F0997B}
+        .badge-dart {background:rgba(15,110,86,0.20);color:#5DCAA5}
+
+        .providers{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px}
+        .prov-box{border-radius:8px;padding:9px 14px;border:1px solid;position:relative}
+        .prov-title{font-size:12px;font-weight:500}
+        .prov-detail{font-size:10px;opacity:.68;margin-top:2px}
+
+        .c-cloud{background:rgba(15,110,86,0.10);border-color:rgba(15,110,86,0.35)}
+        .c-local{background:rgba(15,110,86,0.07);border-color:rgba(15,110,86,0.25);border-style:dashed}
+
+        .tools-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px}
+        .tool-box{border-radius:8px;padding:9px 12px;border:1px solid;background:rgba(186,117,23,0.08);border-color:rgba(186,117,23,0.30)}
+        .tool-title{font-size:11px;font-weight:500}
+        .tool-items{font-size:9px;opacity:.65;margin-top:3px;line-height:1.6}
+
+        .arrow{display:flex;justify-content:center;align-items:center;height:14px;color:#8b949e;font-size:11px;user-select:none}
+
+        .inline-label{font-size:9px;opacity:.55;margin-right:6px;text-transform:uppercase;letter-spacing:.07em}
+
+        .legend{display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);flex-wrap:wrap}
+        .legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:#8b949e}
+        .legend-swatch{width:20px;height:10px;border-radius:3px;border:1px solid}
+
+        .sublabel{display:flex;justify-content:center;margin:-2px 0 2px}
+        .sublabel span{font-size:9px;color:#8b949e;padding:1px 8px;border-radius:8px;border:1px solid}
+        .sl-provider{background:rgba(15,110,86,0.15);border-color:rgba(15,110,86,0.30)}
+        .sl-tools{background:rgba(186,117,23,0.12);border-color:rgba(186,117,23,0.28)}
+
+        .box:hover,.prov-box:hover,.tool-box:hover{opacity:.85}
+    </style>
+</head>
+<body>
+<div class="diagram">
+
+    <div class="header">
+        <span class="header-title">PROXIMA v3.0 — Architecture</span>
+        <span class="header-sub">Dart · terminal-native · model-agnostic</span>
+    </div>
+
+    <div class="layer">
+        <div class="box c-input">
+            <span class="inline-label">L1</span>
+            <span class="box-title">CLI Entry</span>
+            <span class="box-detail">dart:io · args · dotenv · config.yaml · --debug · --dry-run · --resume</span>
+            <span class="box-badge badge-dart">dart:io</span>
+        </div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="layer">
+        <div class="box c-session">
+            <span class="inline-label">L2</span>
+            <span class="box-title">Session Manager</span>
+            <span class="box-detail">conversation history · modified files · undo stack · token usage · ~/.proxima/sessions/</span>
+            <span class="box-badge badge-new">+spec</span>
+        </div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="layer">
+        <div class="box c-agent">
+            <span class="inline-label">L3</span>
+            <span class="box-title">Agent Loop</span>
+            <span class="box-detail">think → act → observe · stuck detection · max 10 iter · schema validator · subagents</span>
+        </div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="providers">
+        <div class="prov-box c-cloud">
+            <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;opacity:.55">L4 cloud</span>
+                <span class="prov-title">Cloud providers</span>
+            </div>
+            <div class="prov-detail">Anthropic · OpenAI · Gemini · Groq · Mistral</div>
+            <div class="prov-detail" style="margin-top:2px;opacity:.5">SSE streaming · native tool calling</div>
+        </div>
+        <div class="prov-box c-local">
+            <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;opacity:.55">L4 local</span>
+                <span class="prov-title">Local providers</span>
+            </div>
+            <div class="prov-detail">Ollama · LM Studio · llama.cpp</div>
+            <div class="prov-detail" style="margin-top:2px;opacity:.5">ReAct fallback for no-tool models</div>
+        </div>
+    </div>
+    <div class="sublabel">
+        <span class="sl-provider">unified LLMProvider interface</span>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="layer">
+        <div class="box c-perm" style="border-width:1.5px">
+            <span class="inline-label">L5</span>
+            <span class="box-title">Permission Gate ⚠</span>
+            <span class="box-detail">safe auto-run · confirm y/n · high-risk typed CONFIRM · blocked hard-reject · audit log (secrets masked)</span>
+            <span class="box-badge badge-gap">gap closed</span>
+        </div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="tools-row">
+        <div class="tool-box">
+            <div class="tool-title">File tools</div>
+            <div class="tool-items">read_file<br>write_file<br>patch_file<br>list_files · glob</div>
+        </div>
+        <div class="tool-box">
+            <div class="tool-title">Shell tools</div>
+            <div class="tool-items">run_command<br>run_tests<br>git (V2)<br>delete_file (V2)</div>
+        </div>
+        <div class="tool-box">
+            <div class="tool-title">Search tools</div>
+            <div class="tool-items">search (regex)<br>AST search (V2)<br>semantic (V3)<br>plugin tools</div>
+        </div>
+    </div>
+    <div class="sublabel">
+        <span class="sl-tools">L6 · ProximaTool interface · pluggable · each tool declares risk level</span>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="layer">
+        <div class="box c-context">
+            <span class="inline-label">L7</span>
+            <span class="box-title">Context Manager</span>
+            <span class="box-detail">token budget · project index · relevance scoring · compaction passes · file chunking</span>
+        </div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="layer">
+        <div class="box c-error">
+            <span class="inline-label">L8</span>
+            <span class="box-title">Error Handler</span>
+            <span class="box-detail">tool retry ×3 · LLM backoff · schema re-prompt · emergency compaction · user escalation</span>
+            <span class="box-badge badge-gap">gap closed</span>
+        </div>
+    </div>
+    <div class="arrow">↓</div>
+
+    <div class="layer">
+        <div class="box c-render">
+            <span class="inline-label">L9</span>
+            <span class="box-title">Renderer</span>
+            <span class="box-detail">ansi_styles · dart_console · diff viewer · permission prompts · cost display · streaming</span>
+            <span class="box-badge badge-dart">terminal</span>
+        </div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-swatch" style="background:rgba(83,74,183,0.12);border-color:rgba(83,74,183,0.35);border-style:solid"></div>
+            In your original diagram
+        </div>
+        <div class="legend-item">
+            <div class="legend-swatch" style="background:rgba(83,74,183,0.06);border-color:rgba(83,74,183,0.30);border-style:dashed"></div>
+            Added by spec (dashed border)
+        </div>
+        <div class="legend-item">
+            <div class="legend-swatch" style="background:rgba(216,90,48,0.14);border-color:rgba(216,90,48,0.50);border-style:solid"></div>
+            Critical gap — now closed
+        </div>
+    </div>
+
+</div>
+</body>
+</html>

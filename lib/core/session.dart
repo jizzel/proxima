@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:collection/collection.dart';
+import 'secret_masker.dart';
 import 'types.dart';
 import 'config.dart';
 
@@ -22,7 +23,7 @@ class TaskRecord {
 
   Map<String, dynamic> toJson() => {
     'tool_name': toolName,
-    'args': args,
+    'args': maskSecrets(args),
     if (backupPath != null) 'backup_path': backupPath,
     'timestamp': timestamp.toIso8601String(),
     'success': success,

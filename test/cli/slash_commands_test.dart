@@ -815,4 +815,27 @@ void main() {
     await handle('/status');
     expect(renderer.output, contains(session.workingDir));
   });
+  group('ollamaBaseUrl injection', () {
+    test('uses the injected base URL over the environment default', () {
+      // Regression test: _printModels previously read
+      // Platform.environment['OLLAMA_BASE_URL'] directly, so a base URL set in
+      // ~/.proxima/config.yaml was honoured by the agent loop but ignored here.
+      final handler = SlashCommandHandler(
+        renderer,
+        isTty: () => false,
+        ollamaBaseUrl: 'http://127.0.0.1:9999',
+      );
+      expect(handler.ollamaBaseUrl, equals('http://127.0.0.1:9999'));
+    });
+
+    test('falls back to the localhost default when not injected', () {
+      final handler = SlashCommandHandler(renderer, isTty: () => false);
+      expect(
+        handler.ollamaBaseUrl,
+        equals(
+          Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
+        ),
+      );
+    });
+  });
 }

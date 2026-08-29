@@ -1,6 +1,8 @@
 /// Shared enums, value types, and sealed classes used across all layers.
 library;
 
+import 'secret_masker.dart';
+
 // ─── Risk & Mode ─────────────────────────────────────────────────────────────
 
 enum RiskLevel { safe, confirm, highRisk, blocked }
@@ -37,7 +39,7 @@ class Message {
     'content': content,
     if (toolName != null) 'tool_name': toolName,
     if (toolCallId != null) 'tool_call_id': toolCallId,
-    if (toolInput != null) 'tool_input': toolInput,
+    if (toolInput != null) 'tool_input': maskSecrets(toolInput!),
   };
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(

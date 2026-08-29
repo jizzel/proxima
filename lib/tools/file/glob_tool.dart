@@ -1,10 +1,18 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
+import '../ignore_matcher.dart';
 import '../tool_interface.dart';
 import '../path_guard.dart';
 
 class GlobTool implements ProximaTool {
+  /// Supplies the current ignore rules; see [ListFilesTool] for why this is a
+  /// callback rather than a value.
+  final IgnoreMatcher Function() _matcher;
+
+  GlobTool({IgnoreMatcher Function()? matcher})
+    : _matcher = matcher ?? IgnoreMatcher.defaults;
+
   @override
   String get name => 'glob';
 
@@ -64,12 +72,15 @@ class GlobTool implements ProximaTool {
     final regexPattern = _globToRegex(pattern);
     final regex = RegExp(regexPattern);
 
+    final matcher = _matcher();
     final results = <String>[];
     await for (final entity in dir.list(recursive: true, followLinks: false)) {
       if (entity is File) {
+        final relToWorking = p.relative(entity.path, from: workingDir);
+        if (matcher.isIgnored(relToWorking)) continue;
         final rel = p.relative(entity.path, from: baseDir);
         if (regex.hasMatch(rel)) {
-          results.add(p.relative(entity.path, from: workingDir));
+          results.add(relToWorking);
         }
       }
     }

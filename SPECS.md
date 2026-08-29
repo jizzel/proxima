@@ -466,9 +466,20 @@ model breaks the session as history grows. Unknown ids — likely from a
 compatible endpoint — get a conservative 8K, overridable with
 `openai_context_window`.
 
-`OpenAIProvider` also omits `temperature` for the o-series reasoning models
-(`o1`, `o3`, `o4`), which accept only their default and reject an explicit value
-— including `0.0` — with a 400.
+**Per-model parameter support is discovered, not predicted.** Which parameters a
+model accepts does not follow family boundaries — verified against the live API,
+`gpt-5` rejects an explicit `temperature` while `gpt-5.1` and `gpt-5.2` accept
+it. Rather than maintain a prefix rule (which was wrong three times), the
+provider sends the request and inspects a 400:
+
+| API says | Provider does |
+|---|---|
+| `Unsupported value/parameter: 'x'` | drops `x`, retries once |
+| `Function tools with reasoning_effort are not supported … set reasoning_effort to 'none'` | sets `reasoning_effort: none`, retries once |
+
+The error message names the remedy; applying it keeps working as new models
+ship. Codex models are excluded from discovery entirely — they are either
+deprecated or served only by `/v1/responses`, never `/v1/chat/completions`.
 
 New model releases therefore appear without a code change for OpenAI and Ollama;
 Anthropic needs only its single `listModels()` list updated. Live fetches happen
@@ -847,6 +858,39 @@ acknowledge which rule applies when selecting a write tool.
 | `rename_file` | confirm | Move/rename with undo support |
 | `create_dir` | safe | Create directory structure |
 | `http_request` | confirm | Fetch a URL (for reading docs, API responses) |
+
+### 8.4.1 Shared Ignore Matcher ✅ Shipped
+
+**File:** `lib/tools/ignore_matcher.dart`
+
+One source of truth for which paths the file-walking tools skip. Previously
+there were three inconsistent definitions — `find_references_tool` and
+`search_symbol_tool` held byte-identical copies of one skip set,
+`project_index` held a different one, and `list_files`, `glob`, and `search`
+had none at all, so `search` walked `node_modules` and `list_files` recursed
+into `.git`.
+
+Sources, applied in order:
+1. built-in defaults (VCS, dependency, and build directories)
+2. `.gitignore` in the working directory
+3. session patterns added with `/ignore`
+
+Two predicates, because the tools walk in two shapes: `isIgnored(relPath)` for
+the flat `list(recursive: true)` walkers, and `shouldPruneDir(basename)` for the
+manual recursive walkers, which can skip a subtree before descending.
+
+Gitignore semantics — negation (`!`), leading-`/` anchoring, trailing-`/`
+directory-only, `**` crossing separators — are implemented in-repo: there is no
+null-safe `.gitignore` matcher on pub.
+
+**Plumbing:** the matcher lives on `ToolRegistry` and is injected into tools as a
+callback, so `ProximaTool.execute(args, workingDir)` — a Layer-6 contract that
+plugins also implement — is unchanged. The agent loop refreshes it each turn, so
+an edited `.gitignore`, a new `/ignore` pattern, or a `/dir` switch takes effect
+without a restart.
+
+**`/ignore` is now enforced.** It previously stored and displayed patterns that
+nothing read.
 
 ### 8.5 Tool Plugin System ✅ Shipped
 
@@ -1489,12 +1533,12 @@ Proxima is not an MVP until all of these pass end-to-end:
 
 **Tools**
 - [x] `read_file` reads within working directory, rejects path traversal
-- [ ] `list_files` respects .gitignore — **not implemented**
-- [x] `glob` matches patterns correctly — *works; no dedicated test file*
-- [x] `search` finds regex matches across files — *works; no dedicated test file*
+- [x] `list_files` respects .gitignore
+- [x] `glob` matches patterns correctly
+- [x] `search` finds regex matches across files
 - [x] `write_file` creates backup, shows diff, applies on approval
-- [x] `patch_file` applies unified diff with hunk preview — *works; no dedicated test file*
-- [x] `run_command` shows command, requires approval, respects blocklist — *covered via permission_gate_test*
+- [x] `patch_file` applies unified diff with hunk preview
+- [x] `run_command` shows command, requires approval, respects blocklist
 - [x] `run_tests` auto-detects framework, parses failures
 
 **Context & Error**

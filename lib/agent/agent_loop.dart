@@ -105,12 +105,17 @@ class AgentLoop {
         }
         llmRetries = 0;
       } catch (e) {
-        if (llmRetries < _config.maxRetriesLlm) {
+        // A refused or unresolvable connection will not fix itself within one
+        // turn — retrying it just repeats the same message three times. Fail
+        // fast with the actionable text the provider already produced.
+        final isUnreachable = _isUnreachable(e);
+
+        if (!isUnreachable && llmRetries < _config.maxRetriesLlm) {
           llmRetries++;
           callbacks.onError('LLM error (retry $llmRetries): $e');
           continue;
         }
-        callbacks.onError('LLM error (giving up): $e');
+        callbacks.onError(isUnreachable ? '$e' : 'LLM error (giving up): $e');
         session.status = TaskStatus.failed;
         return session;
       }
@@ -516,6 +521,18 @@ class AgentLoop {
   /// [callbacks.onChunk]. Returns the assembled [LLMResponse] and a flag
   /// indicating whether streaming actually occurred.
   ///
+  /// Whether [e] means the server could not be contacted at all.
+  ///
+  /// Distinct from a transient network error: an unreachable server will fail
+  /// the retry and the complete() fallback identically, so it should be
+  /// reported once and abandoned rather than repeated.
+  static bool _isUnreachable(Object e) =>
+      e is LLMError &&
+      e.kind == LLMErrorKind.network &&
+      (e.message.contains('not detected') ||
+          e.message.contains('Could not reach') ||
+          e.message.contains('Could not resolve'));
+
   /// Falls back to [_provider.complete] if the stream throws, logging a debug
   /// warning via [callbacks.onError].
   Future<(LLMResponse, bool)> _streamResponse(
@@ -565,10 +582,13 @@ class AgentLoop {
 
       return (response, true);
     } catch (e) {
-      // Streaming failed — fall back to complete() and log a debug warning.
+      // An unreachable server fails complete() the same way — falling back
+      // only doubles the error output. Other stream failures (a mid-transfer
+      // drop, a malformed chunk) may well succeed via complete(), so those
+      // still fall back.
+      if (_isUnreachable(e)) rethrow;
       callbacks.onError('[debug] Streaming failed, falling back: $e');
-      final response = await _provider.complete(request);
-      return (response, false);
+      return (await _provider.complete(request), false);
     }
   }
 }

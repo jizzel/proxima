@@ -1,11 +1,19 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
+import '../ignore_matcher.dart';
 import '../tool_interface.dart';
 import '../path_guard.dart';
 
 /// Cross-file symbol reference finder.
 class FindReferencesTool implements ProximaTool {
+  /// Supplies the current ignore rules; see [ListFilesTool] for why this is a
+  /// callback rather than a value.
+  final IgnoreMatcher Function() _matcher;
+
+  FindReferencesTool({IgnoreMatcher Function()? matcher})
+    : _matcher = matcher ?? IgnoreMatcher.defaults;
+
   @override
   String get name => 'find_references';
 
@@ -47,14 +55,6 @@ class FindReferencesTool implements ProximaTool {
     'required': ['symbol'],
   };
 
-  static const _skipDirs = {
-    '.git',
-    'node_modules',
-    'build',
-    '.dart_tool',
-    '.pub-cache',
-  };
-  static const _skipSuffixes = ['.g.dart', '.freezed.dart', '.pb.dart'];
   static const _defaultExtensions = {
     '.dart',
     '.ts',
@@ -127,7 +127,13 @@ class FindReferencesTool implements ProximaTool {
         final basename = p.basename(entity.path);
 
         if (entity is Directory) {
-          if (_skipDirs.contains(basename)) continue;
+          // Pass the working-dir-relative path as well as the basename: a
+          // path-qualified rule (`vendor/lib/`) can never match a bare name.
+          final relDir = p.relative(entity.path, from: workingDir);
+          if (_matcher().shouldPruneDir(basename) ||
+              _matcher().isIgnored(relDir, isDirectory: true)) {
+            continue;
+          }
           await _walk(
             entity,
             symbol,
@@ -138,7 +144,12 @@ class FindReferencesTool implements ProximaTool {
             hits,
           );
         } else if (entity is File) {
-          if (_skipSuffixes.any((s) => entity.path.endsWith(s))) continue;
+          // Consult the full matcher, not just the built-in suffixes — a
+          // `.gitignore` or `/ignore` rule such as `*.dart` or
+          // `generated/foo.dart` must be honoured here too.
+          if (_matcher().isIgnored(p.relative(entity.path, from: workingDir))) {
+            continue;
+          }
           final ext = p.extension(entity.path).toLowerCase();
           if (!extensions.contains(ext)) continue;
           await _searchFile(

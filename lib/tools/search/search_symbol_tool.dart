@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
+import '../ignore_matcher.dart';
 import '../tool_interface.dart';
 import '../path_guard.dart';
 
@@ -20,6 +21,13 @@ class SymbolMatch {
 
 /// AST-heuristic symbol search across Dart, JS/TS, Python, Go, Rust, Java/Kotlin.
 class SearchSymbolTool implements ProximaTool {
+  /// Supplies the current ignore rules; see [ListFilesTool] for why this is a
+  /// callback rather than a value.
+  final IgnoreMatcher Function() _matcher;
+
+  SearchSymbolTool({IgnoreMatcher Function()? matcher})
+    : _matcher = matcher ?? IgnoreMatcher.defaults;
+
   @override
   String get name => 'search_symbol';
 
@@ -53,15 +61,6 @@ class SearchSymbolTool implements ProximaTool {
     },
     'required': ['symbol'],
   };
-
-  static const _skipDirs = {
-    '.git',
-    'node_modules',
-    'build',
-    '.dart_tool',
-    '.pub-cache',
-  };
-  static const _skipSuffixes = ['.g.dart', '.freezed.dart', '.pb.dart'];
 
   @override
   Future<String> execute(Map<String, dynamic> args, String workingDir) async {
@@ -120,10 +119,20 @@ class SearchSymbolTool implements ProximaTool {
       final basename = p.basename(entity.path);
 
       if (entity is Directory) {
-        if (_skipDirs.contains(basename)) continue;
+        // Pass the working-dir-relative path as well as the basename: a
+        // path-qualified rule (`vendor/lib/`) can never match a bare name.
+        final relDir = p.relative(entity.path, from: workingDir);
+        if (_matcher().shouldPruneDir(basename) ||
+            _matcher().isIgnored(relDir, isDirectory: true)) {
+          continue;
+        }
         await _walk(entity, symbol, kind, workingDir, maxResults, matches);
       } else if (entity is File) {
-        if (_skipSuffixes.any((s) => entity.path.endsWith(s))) continue;
+        // Consult the full matcher, not just the built-in suffixes — a
+        // `.gitignore` or `/ignore` rule such as `*.dart` must be honoured.
+        if (_matcher().isIgnored(p.relative(entity.path, from: workingDir))) {
+          continue;
+        }
         final lang = _detectLanguage(entity.path);
         if (lang == null) continue;
         await _searchFile(

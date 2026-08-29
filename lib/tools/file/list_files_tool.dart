@@ -2,9 +2,17 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
 import '../tool_interface.dart';
+import '../ignore_matcher.dart';
 import '../path_guard.dart';
 
 class ListFilesTool implements ProximaTool {
+  /// Supplies the current ignore rules. A callback rather than a value so the
+  /// tool always sees the matcher the agent loop refreshed this turn.
+  final IgnoreMatcher Function() _matcher;
+
+  ListFilesTool({IgnoreMatcher Function()? matcher})
+    : _matcher = matcher ?? IgnoreMatcher.defaults;
+
   @override
   String get name => 'list_files';
 
@@ -49,7 +57,26 @@ class ListFilesTool implements ProximaTool {
       throw ToolError(name, 'Directory not found: $relPath');
     }
 
-    final entities = await dir.list(recursive: recursive).toList();
+    final matcher = _matcher();
+    final entities = <FileSystemEntity>[];
+
+    // Walk manually so ignored directories are pruned before descending —
+    // `Directory.list(recursive: true)` would stat every node under
+    // node_modules before we could filter it out.
+    Future<void> walk(Directory current) async {
+      await for (final entity in current.list(followLinks: false)) {
+        final rel = p.relative(entity.path, from: workingDir);
+        final isDir = entity is Directory;
+        if (matcher.isIgnored(rel, isDirectory: isDir)) continue;
+        entities.add(entity);
+        if (isDir && recursive) {
+          if (matcher.shouldPruneDir(p.basename(entity.path))) continue;
+          await walk(entity);
+        }
+      }
+    }
+
+    await walk(dir);
     entities.sort((a, b) => a.path.compareTo(b.path));
 
     final lines = entities.map((e) {

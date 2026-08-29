@@ -459,6 +459,13 @@ may target Groq, Together, OpenRouter, or LM Studio, whose ids look nothing like
 OpenAI's (`llama-3.3-70b`, `meta-llama/…`, `anthropic/…`). Everything is kept
 except ids naming a non-chat modality (embeddings, audio, image, rerank).
 
+Context windows are derived per model (`OpenAIProvider.contextWindowFor`) rather
+than advertised as a flat figure: `ContextBuilder` derives the entire token
+budget from `capabilities.contextWindow`, so over-reporting it against a smaller
+model breaks the session as history grows. Unknown ids — likely from a
+compatible endpoint — get a conservative 8K, overridable with
+`openai_context_window`.
+
 `OpenAIProvider` also omits `temperature` for the o-series reasoning models
 (`o1`, `o3`, `o4`), which accept only their default and reject an explicit value
 — including `0.0` — with a 400.

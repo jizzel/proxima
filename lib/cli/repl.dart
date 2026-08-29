@@ -159,11 +159,21 @@ class ProximaRepl {
   /// env map in one place stops them drifting apart — the critic previously
   /// omitted the OpenAI keys, so an OpenAI-backed write threw an auth error
   /// before the permission prompt could be shown.
+  /// Environment variable that supplies credentials for [model]'s provider,
+  /// so an auth failure points at the right one rather than always Anthropic.
+  static String _authEnvVarFor(String model) {
+    if (model.startsWith('openai/')) return 'OPENAI_API_KEY';
+    if (model.startsWith('ollama/')) return 'OLLAMA_BASE_URL';
+    return 'ANTHROPIC_API_KEY';
+  }
+
   ProviderRegistry _buildProviderRegistry() => ProviderRegistry(
     env: {
       'ANTHROPIC_API_KEY': _config.anthropicApiKey ?? '',
       'OPENAI_API_KEY': _config.openaiApiKey ?? '',
       'OPENAI_BASE_URL': _config.openaiBaseUrl ?? 'https://api.openai.com/v1',
+      if (_config.openaiContextWindow != null)
+        'OPENAI_CONTEXT_WINDOW': '${_config.openaiContextWindow}',
       'OLLAMA_BASE_URL': _config.ollamaBaseUrl ?? 'http://localhost:11434',
     },
   );
@@ -276,7 +286,7 @@ class ProximaRepl {
       _renderer.printError('  ⚠ ${e.message}');
       if (e.kind == LLMErrorKind.auth) {
         _renderer.printDim(
-          '  Set ANTHROPIC_API_KEY in your environment or ~/.proxima/config.yaml',
+          '  Set ${_authEnvVarFor(_activeModel)} in your environment or ~/.proxima/config.yaml',
         );
       }
       return;
@@ -347,7 +357,7 @@ class ProximaRepl {
         _renderer.printError('  ⚠ ${e.message}');
         if (e.kind == LLMErrorKind.auth) {
           _renderer.printDim(
-            '  Set ANTHROPIC_API_KEY in your environment or ~/.proxima/config.yaml',
+            '  Set ${_authEnvVarFor(_activeModel)} in your environment or ~/.proxima/config.yaml',
           );
         }
         _agentLoop = null; // reset so user can switch model and retry
@@ -461,10 +471,16 @@ class ProximaRepl {
 
   /// Returns the known context window for [model] without creating a provider
   /// (avoids requiring API key just to show /context output).
-  static int _contextWindowForModel(String model) {
+  int _contextWindowForModel(String model) {
     if (model.startsWith('anthropic/')) return 200000;
     if (model.startsWith('ollama/')) return 32768;
-    return 128000; // unknown provider — use conservative default
+    if (model.startsWith('openai/')) {
+      // Derived per model — an OpenAI-compatible endpoint may serve 4K or 8K
+      // models, and over-reporting makes requests fail as the session grows.
+      return _config.openaiContextWindow ??
+          OpenAIProvider.contextWindowFor(model.substring('openai/'.length));
+    }
+    return 8192; // unknown provider — assume the smallest window in common use
   }
 
   void _switchMode(SessionMode mode) {

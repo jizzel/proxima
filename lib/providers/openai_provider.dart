@@ -19,16 +19,51 @@ class OpenAIProvider implements LLMProvider {
   final String _apiKey;
   final String _baseUrl;
   final http.Client _client;
+  final int _contextWindow;
 
   OpenAIProvider({
     required String model,
     required String apiKey,
     String baseUrl = 'https://api.openai.com/v1',
     http.Client? client,
+    int? contextWindow,
   }) : _model = model,
        _apiKey = apiKey,
        _baseUrl = baseUrl,
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _contextWindow = contextWindow ?? contextWindowFor(model);
+
+  /// Best-effort context window for [model], in tokens.
+  ///
+  /// Advertising a single figure for every model is unsafe: `baseUrl` may point
+  /// at an endpoint serving 4K or 8K models, and `ContextBuilder` derives the
+  /// whole token budget — including a 10% output allowance — from this number.
+  /// Over-reporting makes requests fail as a session grows.
+  ///
+  /// Known OpenAI families are matched by prefix; anything unrecognised gets a
+  /// conservative 8K, which every chat model can honour. Override it with
+  /// `openai_context_window` in config for a larger custom endpoint.
+  static int contextWindowFor(String model) {
+    final id = model.toLowerCase();
+    // Strip any vendor prefix used by proxy endpoints (e.g. "openai/gpt-4o").
+    final bare = id.contains('/') ? id.split('/').last : id;
+
+    if (bare.startsWith('gpt-4.1') || bare.startsWith('gpt-4.5')) {
+      return 1000000;
+    }
+    if (bare.startsWith('gpt-5')) return 400000;
+    if (RegExp(r'^o\d').hasMatch(bare)) return 200000;
+    if (bare.startsWith('gpt-4o') || bare.startsWith('gpt-4-turbo')) {
+      return 128000;
+    }
+    if (bare.startsWith('gpt-4-32k')) return 32768;
+    if (bare.startsWith('gpt-4')) return 8192;
+    if (bare.startsWith('gpt-3.5-turbo-16k')) return 16384;
+    if (bare.startsWith('gpt-3.5')) return 16385;
+    // Unknown model, very likely a non-OpenAI compatible endpoint. Assume the
+    // smallest window in common use rather than risk over-reporting.
+    return 8192;
+  }
 
   @override
   String get name => 'openai';
@@ -37,20 +72,30 @@ class OpenAIProvider implements LLMProvider {
   String get model => _model;
 
   @override
-  ProviderCapabilities get capabilities => const ProviderCapabilities(
+  ProviderCapabilities get capabilities => ProviderCapabilities(
     nativeToolUse: true,
     streaming: true,
-    contextWindow: 128000,
+    contextWindow: _contextWindow,
   );
 
   @override
   Future<LLMResponse> complete(CompletionRequest request) async {
     final body = _buildRequestBody(request, stream: false);
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/chat/completions'),
-      headers: _headers(),
-      body: jsonEncode(body),
-    );
+
+    final http.Response response;
+    try {
+      response = await _client.post(
+        Uri.parse('$_baseUrl/chat/completions'),
+        headers: _headers(),
+        body: jsonEncode(body),
+      );
+    } on Exception catch (e) {
+      // A transport failure (DNS, refused connection, TLS, timeout) surfaces
+      // as ClientException/SocketException, not an HTTP response. It must
+      // become an LLMError or FallbackProvider — which only catches LLMError —
+      // will not try the secondary during the outage it exists to cover.
+      throw LLMError(LLMErrorKind.network, 'Request to $_baseUrl failed: $e');
+    }
 
     if (response.statusCode != 200) {
       throw _parseError(response.statusCode, response.body);
@@ -68,7 +113,12 @@ class OpenAIProvider implements LLMProvider {
           ..headers.addAll(_headers())
           ..body = jsonEncode(body);
 
-    final response = await _client.send(httpRequest);
+    final http.StreamedResponse response;
+    try {
+      response = await _client.send(httpRequest);
+    } on Exception catch (e) {
+      throw LLMError(LLMErrorKind.network, 'Request to $_baseUrl failed: $e');
+    }
 
     if (response.statusCode != 200) {
       final errorBody = await response.stream.bytesToString();
@@ -79,7 +129,20 @@ class OpenAIProvider implements LLMProvider {
     TokenUsage? finalUsage;
     bool hasToolUse = false;
 
-    await for (final chunk in response.stream.transform(utf8.decoder)) {
+    // A connection dropped mid-stream throws from the body stream too; it must
+    // also surface as an LLMError so the agent loop and FallbackProvider can
+    // handle it rather than crashing the turn.
+    final decoded = response.stream
+        .transform(utf8.decoder)
+        .handleError(
+          (Object e) => throw LLMError(
+            LLMErrorKind.network,
+            'Stream from $_baseUrl failed: $e',
+          ),
+          test: (e) => e is! LLMError,
+        );
+
+    await for (final chunk in decoded) {
       buffer.write(chunk);
       final raw = buffer.toString();
       final lines = raw.split('\n');

@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 import 'package:proxima/core/types.dart';
 import 'package:proxima/providers/provider_interface.dart';
 import 'package:proxima/providers/openai_provider.dart';
+import 'package:proxima/providers/fallback_provider.dart';
 
 /// Canned non-streaming response with a plain text answer.
 const _textResponse = '''
@@ -533,4 +534,109 @@ void main() {
       expect(await provider.listModels(), isEmpty);
     });
   });
+  group('OpenAIProvider transport failures', () {
+    // Regression: a ClientException escaping the provider meant
+    // FallbackProvider — which only catches LLMError — never tried the
+    // secondary during the very network outage it exists to cover.
+    http.Client deadClient() => MockClient(
+      (request) async => throw http.ClientException('refused', request.url),
+    );
+
+    test('complete() converts a transport failure to LLMError(network)', () {
+      final provider = OpenAIProvider(
+        model: 'gpt-4o',
+        apiKey: 'k',
+        client: deadClient(),
+      );
+      expect(
+        () => provider.complete(requestWith()),
+        throwsA(
+          isA<LLMError>().having((e) => e.kind, 'kind', LLMErrorKind.network),
+        ),
+      );
+    });
+
+    test('stream() converts a transport failure to LLMError(network)', () {
+      final provider = OpenAIProvider(
+        model: 'gpt-4o',
+        apiKey: 'k',
+        client: deadClient(),
+      );
+      expect(
+        () => provider.stream(requestWith()).toList(),
+        throwsA(
+          isA<LLMError>().having((e) => e.kind, 'kind', LLMErrorKind.network),
+        ),
+      );
+    });
+
+    test('a network failure reaches the fallback secondary', () async {
+      final primary = OpenAIProvider(
+        model: 'gpt-4o',
+        apiKey: 'k',
+        client: deadClient(),
+      );
+      final response = await FallbackProvider(
+        primary,
+        _StubProvider(),
+      ).complete(requestWith());
+      expect((response.body as FinalResponse).text, equals('from secondary'));
+    });
+  });
+
+  group('OpenAIProvider context window', () {
+    test('derives the window from the model family', () {
+      expect(OpenAIProvider.contextWindowFor('gpt-4o'), equals(128000));
+      expect(OpenAIProvider.contextWindowFor('gpt-4-turbo'), equals(128000));
+      expect(OpenAIProvider.contextWindowFor('o3'), equals(200000));
+      expect(OpenAIProvider.contextWindowFor('gpt-4'), equals(8192));
+    });
+
+    test('falls back to a conservative 8K for unknown models', () {
+      // Compatible endpoints serve models with 4K/8K windows; over-reporting
+      // 128K makes ContextBuilder budget an output allowance the model cannot
+      // honour, and requests start failing as the session grows.
+      expect(
+        OpenAIProvider.contextWindowFor('llama-3.1-8b-instant'),
+        equals(8192),
+      );
+      expect(OpenAIProvider.contextWindowFor('qwen2.5-coder-7b'), equals(8192));
+    });
+
+    test('strips a vendor prefix used by proxy endpoints', () {
+      expect(OpenAIProvider.contextWindowFor('openai/gpt-4o'), equals(128000));
+    });
+
+    test('an explicit contextWindow overrides the derived value', () {
+      final provider = OpenAIProvider(
+        model: 'some-custom-model',
+        apiKey: 'k',
+        contextWindow: 32768,
+      );
+      expect(provider.capabilities.contextWindow, equals(32768));
+    });
+  });
+}
+
+/// Minimal secondary for the fallback test.
+class _StubProvider implements LLMProvider {
+  @override
+  String get name => 'secondary';
+  @override
+  String get model => 'stub';
+  @override
+  ProviderCapabilities get capabilities => const ProviderCapabilities(
+    nativeToolUse: false,
+    streaming: false,
+    contextWindow: 8192,
+  );
+  @override
+  Future<LLMResponse> complete(CompletionRequest request) async => LLMResponse(
+    body: FinalResponse('from secondary'),
+    usage: TokenUsage.zero,
+  );
+  @override
+  Stream<LLMChunk> stream(CompletionRequest request) async* {}
+  @override
+  Future<List<String>> listModels() async => [];
 }

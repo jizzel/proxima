@@ -18,6 +18,7 @@ class ProximaConfig {
   final String? anthropicApiKey;
   final String? openaiApiKey;
   final String? openaiBaseUrl;
+  final int? openaiContextWindow;
   final String? ollamaBaseUrl;
   final bool criticOnWrite;
   final String? fallbackModel;
@@ -38,6 +39,7 @@ class ProximaConfig {
     this.anthropicApiKey,
     this.openaiApiKey,
     this.openaiBaseUrl,
+    this.openaiContextWindow,
     this.ollamaBaseUrl,
     this.criticOnWrite = true,
     this.fallbackModel,
@@ -127,6 +129,8 @@ class ProximaConfig {
       anthropicApiKey: yaml['anthropic_api_key'] as String? ?? anthropicApiKey,
       openaiApiKey: yaml['openai_api_key'] as String? ?? openaiApiKey,
       openaiBaseUrl: yaml['openai_base_url'] as String? ?? openaiBaseUrl,
+      openaiContextWindow:
+          yaml['openai_context_window'] as int? ?? openaiContextWindow,
       ollamaBaseUrl: yaml['ollama_base_url'] as String? ?? ollamaBaseUrl,
       criticOnWrite: yaml['critic_on_write'] as bool? ?? criticOnWrite,
       fallbackModel: yaml['fallback_model'] as String? ?? fallbackModel,
@@ -176,6 +180,7 @@ class ProximaConfig {
     String? anthropicApiKey,
     String? openaiApiKey,
     String? openaiBaseUrl,
+    int? openaiContextWindow,
     String? ollamaBaseUrl,
     List<String>? pluginDirs,
   }) => ProximaConfig(
@@ -192,6 +197,7 @@ class ProximaConfig {
     anthropicApiKey: anthropicApiKey ?? this.anthropicApiKey,
     openaiApiKey: openaiApiKey ?? this.openaiApiKey,
     openaiBaseUrl: openaiBaseUrl ?? this.openaiBaseUrl,
+    openaiContextWindow: openaiContextWindow ?? this.openaiContextWindow,
     ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
     criticOnWrite: criticOnWrite,
     fallbackModel: fallbackModel,

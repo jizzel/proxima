@@ -70,8 +70,14 @@ class ProviderRegistry {
       );
     }
     final baseUrl = _env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1';
+    final windowOverride = int.tryParse(_env['OPENAI_CONTEXT_WINDOW'] ?? '');
     // OpenAI has native tool use — no ReAct wrapper needed.
-    return OpenAIProvider(model: model, apiKey: apiKey, baseUrl: baseUrl);
+    return OpenAIProvider(
+      model: model,
+      apiKey: apiKey,
+      baseUrl: baseUrl,
+      contextWindow: windowOverride,
+    );
   }
 
   LLMProvider _createOllama(String model) {

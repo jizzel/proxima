@@ -9,6 +9,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+#### Agent Loop — Spinning Detection
+
+- **`StuckDetector.isSpinning(toolLog, {int window = 6})`** — second stuck-detection mechanism that fires when the last `window` calls are all read-only tools (`read_file`, `list_files`, `glob`, `search`, `search_symbol`, `find_references`, `get_imports`, `git_status`, `git_diff`, `git_log`). Catches models that loop on reads without ever writing — not caught by the identical-call detector.
+- **`StuckDetector.spinWindow = 6`** — public constant exposed for callers that need to slice the log for display.
+- **`AgentCallbacks.onStuck` gains `reason` parameter** (`'stuck'` | `'spinning'`, default `'stuck'`) — lets the renderer show a tailored message for each case; existing callers unaffected.
+- **`TaskSummaryRenderer.renderStuck` differentiated message** — spinning shows *"Agent is reading without making progress — last N calls were all read-only"*; stuck shows the existing *"Repeated tool calls detected"* message.
+
+### Improved
+
+- **`plugin_loader.dart` — fully async I/O** — `_loadOne` converted from sync to `async`; `existsSync` → `exists`, `readAsStringSync` → `readAsString`, `statSync` → `stat`, `list().toList()` → `await for`; prevents blocking the Dart event loop during plugin discovery at startup.
+- **`find_references_tool.dart` — streaming directory walk** — `_walk` now uses `await for` instead of `dir.list().toList()`; processes entries one at a time and exits early when `max_results` is reached, avoiding loading the full directory listing into memory on large codebases.
 ### Security
 
 - **Secret masking before disk writes** (`lib/core/secret_masker.dart`) — tool arguments are persisted to both `~/.proxima/audit.jsonl` and `~/.proxima/sessions/*.json`; secret-shaped values are now replaced with `***` in both. Detects Anthropic (`sk-ant-`), OpenAI (`sk-proj-`, `sk-`), GitHub (`gh[porsu]_`), AWS (`AKIA…`), Slack (`xox[baprs]-`), and JWTs by pattern. `Authorization` headers consume the auth scheme (`Bearer`/`Basic`/`Token`/`Digest`/`APIKey`) *and* the credential after it, so opaque credentials with no provider prefix are masked too. Bare schemes (`Bearer`/`Basic`/`Digest`/`APIKey`/`Token`) are matched without an `Authorization:` prefix, covering headers passed structurally as `{'headers': {'Authorization': 'Token abc'}}`. Argument names are normalised (camelCase split, separators collapsed) and matched per segment, so `api-key`, `x-api-key`, `apiKey`, `API_KEY`, and `Authorization` are all recognised while `author` and `tokenizer` are not. Masking is applied at the serialisation boundary only (`AuditLog.record()`, `Message.toJson()`, `TaskRecord.toJson()`) — never to the live in-memory session, which `AnthropicProvider` and `Compaction` both read. Terminal output and tool results are deliberately left unmasked so the confirm prompt shows the real command and `--resume` replays correctly. Closes the last unmitigated Critical risk in SPECS §22. 46 new tests
@@ -21,8 +34,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 - SPECS §15.3 documents config precedence (YAML overrides environment); new §15.3.1 specifies secret masking; §18 MVP checklist reconciled against the test suite, with spinning detection and `list_files` `.gitignore` support explicitly marked not implemented; §22 risk register updated
 - README gains a "Secret masking" subsection under Data & Privacy and an explicit config-precedence note
-
-- **Example plugin** (`.proxima/plugins/word-count/`) — fully annotated reference implementation; `run.sh` demonstrates the stdin/stdout/exit-code protocol with inline comments; `README.md` documents how to write, test, and register plugins; intended as a copy-paste starting point for community plugins
 
 ---
 

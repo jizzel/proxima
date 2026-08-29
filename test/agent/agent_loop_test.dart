@@ -147,7 +147,10 @@ class MockCallbacks implements AgentCallbacks {
   @override
   void onError(String message) => events.add('error: $message');
   @override
-  Future<bool> onStuck(List<ToolCall> recentCalls) async {
+  Future<bool> onStuck(
+    List<ToolCall> recentCalls, {
+    String reason = 'stuck',
+  }) async {
     events.add('stuck');
     return false; // abort by default in tests
   }
@@ -281,12 +284,50 @@ void main() {
 
   test('max iterations reached', () async {
     // Provider always returns tool calls, never final.
+    // Uses a non-read-only tool so spinning detection does not fire before
+    // max iterations.
     final calls = List.generate(
       15,
       (i) => LLMResponse(
         body: ToolCallResponse(
           ToolCall(
-            tool: 'read_file',
+            tool: 'run_command',
+            args: {'command': 'echo $i'},
+            reasoning: 'running',
+          ),
+        ),
+        usage: TokenUsage.zero,
+      ),
+    );
+
+    final provider = MockProvider(calls);
+    final callbacks = MockCallbacks();
+    final session = ProximaSession.create(config);
+    final result = await makeLoop(
+      provider,
+    ).runTurn(session, 'run all commands', callbacks);
+
+    expect(result.status, TaskStatus.failed);
+    expect(callbacks.events.any((e) => e.contains('error')), isTrue);
+  });
+
+  test('spinning detection fires when only read-only tools called', () async {
+    // 6 read-only calls with different args — not caught by stuck detector,
+    // but isSpinning fires on iteration 6.
+    final readOnlyTools = [
+      'read_file',
+      'list_files',
+      'glob',
+      'search',
+      'find_references',
+      'get_imports',
+    ];
+    final calls = List.generate(
+      10,
+      (i) => LLMResponse(
+        body: ToolCallResponse(
+          ToolCall(
+            tool: readOnlyTools[i % readOnlyTools.length],
             args: {'path': 'file_$i.txt'},
             reasoning: 'reading',
           ),
@@ -303,7 +344,7 @@ void main() {
     ).runTurn(session, 'read all files', callbacks);
 
     expect(result.status, TaskStatus.failed);
-    expect(callbacks.events.any((e) => e.contains('error')), isTrue);
+    expect(callbacks.events.contains('stuck'), isTrue);
   });
 
   test('streams response when provider supports streaming', () async {

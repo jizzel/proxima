@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] — 2026-08-29
+
 ### Added
 
 #### Agent Loop — Spinning Detection
@@ -272,7 +276,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jizzel/proxima/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jizzel/proxima/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jizzel/proxima/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jizzel/proxima/compare/v0.1.4...v1.0.0

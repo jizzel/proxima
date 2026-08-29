@@ -262,4 +262,70 @@ void main() {
       expect(masked['api-key'], equals('***'));
     });
   });
+  group('maskSecrets — structured Authorization headers', () {
+    // Regression (PR #12 review): a plugin may pass headers structurally as
+    // {'headers': {'Authorization': 'Token abc'}}. The key normalises to the
+    // single segment `authorization`, which does not match the `auth` fragment,
+    // and Token/Digest/APIKey values were not covered by the bare-scheme
+    // pattern — so those credentials reached disk verbatim.
+    test('masks every auth scheme carried in a structured header', () {
+      for (final value in [
+        'Bearer opaqueCredential123',
+        'Basic dXNlcjpwYXNzd29yZA==',
+        'Token opaqueCredential123',
+        'Digest xyz789abc123def',
+        'APIKey abc123def456ghi',
+      ]) {
+        final masked = maskSecrets({
+          'headers': {'Authorization': value},
+        });
+        final header =
+            (masked['headers'] as Map<String, dynamic>)['Authorization'];
+        expect(header, equals('***'), reason: value);
+      }
+    });
+
+    test('masks an opaque value under an authorization key', () {
+      // No scheme and no provider prefix — the key name is the only signal.
+      final masked = maskSecrets({'Authorization': 'plainOpaqueValue123'});
+      expect(masked['Authorization'], equals('***'));
+    });
+
+    test('masks authorization key spellings', () {
+      for (final key in [
+        'Authorization',
+        'authorization',
+        'X-Authorization',
+        'authorization_header',
+      ]) {
+        expect(
+          maskSecrets({key: 'Token opaqueCred123'})[key],
+          equals('***'),
+          reason: key,
+        );
+      }
+    });
+
+    test('masks bare Digest, APIKey, and Token schemes in a command', () {
+      for (final input in [
+        '-H "Digest xyz789abc123def"',
+        '--header "APIKey abc123def456gh"',
+        '-H "Token abc123def456789"',
+      ]) {
+        expect(maskSecretsInString(input), contains('***'), reason: input);
+      }
+    });
+
+    test('does not mangle prose containing scheme words', () {
+      // `token` and `digest` are ordinary English words; the Token rule
+      // additionally requires a digit-bearing credential of >=12 chars.
+      for (final input in [
+        'git commit -m "token refresh handling"',
+        'dart test --name "digest parsing"',
+        'echo "the token expired"',
+      ]) {
+        expect(maskSecretsInString(input), equals(input), reason: input);
+      }
+    });
+  });
 }

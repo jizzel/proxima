@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Proxima** is a terminal-native, model-agnostic coding agent built in Dart. It understands, navigates, and modifies codebases through structured tool execution, with an explicit permission gate at every destructive boundary and zero required cloud dependency.
 
-The full product specification is in `GUIDELINES/SPECS.md` — read it before making significant architectural decisions.
+The full product specification is in `SPECS.md` — read it before making significant architectural decisions.
 
 ## Commands
 
@@ -104,11 +104,11 @@ correctly.
 
 ## MVP Checklist
 
-Before a feature is considered complete, verify against the MVP checklist in `GUIDELINES/SPECS.md` Section 18. All items must pass end-to-end.
+Before a feature is considered complete, verify against the MVP checklist in `SPECS.md` Section 18. All items must pass end-to-end.
 
 ## Dart Package Dependencies
 
-Key packages from `GUIDELINES/SPECS.md` Section 17:
+Key packages from `SPECS.md` Section 17:
 - `args` — CLI argument parsing
 - `http` + `eventsource` — provider HTTP/SSE
 - `dart_console` + `ansi_styles` — terminal rendering
@@ -118,5 +118,5 @@ Key packages from `GUIDELINES/SPECS.md` Section 17:
 - `test` + `mockito` — testing and provider mocking
 
 
-Changes in any of GUIDELINES/SPECS.md, README.md, and CLAUDE.md must always agree or synchronize with each other. If you update one, check the others for consistency. The three documents serve different audiences but must tell a coherent story about the project.
-The GUIDELINES/SPECS.md is the primary source of truth. Always update it when new or changing architectural decisions are made.
+Changes in any of SPECS.md, README.md, and CLAUDE.md must always agree or synchronize with each other. If you update one, check the others for consistency. The three documents serve different audiences but must tell a coherent story about the project.
+The SPECS.md is the primary source of truth. Always update it when new or changing architectural decisions are made.

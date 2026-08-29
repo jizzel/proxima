@@ -25,6 +25,11 @@ const List<String> _sensitiveKeyFragments = [
   'password',
   'passwd',
   'auth',
+  // `authorization` is listed explicitly: segment matching means it does not
+  // match the `auth` fragment, and structured headers such as
+  // {'headers': {'Authorization': 'Token abc'}} would otherwise be persisted
+  // verbatim — the key is the only signal there.
+  'authorization',
   'credential',
   'private_key',
 ];
@@ -43,10 +48,23 @@ final List<RegExp> _secretPatterns = [
     caseSensitive: false,
   ),
   // A bare scheme + credential with no `Authorization:` prefix, e.g. a raw
-  // `-H "Bearer abc123"`. Requires a credential-shaped token (>=8 chars, no
-  // spaces) so ordinary prose such as `git commit -m "basic cleanup"` is not
-  // mangled.
-  RegExp(r'''\b(?:bearer|basic)\s+[^\s"'`,;]{8,}''', caseSensitive: false),
+  // `-H "Bearer abc123"` or a structured header value `'Token abc123'`.
+  // Covers the same scheme set as the header rule above — a narrower set would
+  // leak Digest/APIKey/Token credentials carried in structured arguments.
+  // Requires a credential-shaped token (>=8 chars, no spaces) so ordinary prose
+  // such as `git commit -m "basic cleanup"` is not mangled.
+  RegExp(
+    r'''\b(?:bearer|basic|digest|apikey)\s+[^\s"'`,;]{8,}''',
+    caseSensitive: false,
+  ),
+  // `Token <cred>` is handled separately: `token` is a common English word, so
+  // it additionally requires the credential to look like one (no spaces, mixed
+  // alphanumeric, >=12 chars) to avoid mangling prose such as
+  // `git commit -m "token refresh handling"`.
+  RegExp(
+    r'''\btoken\s+(?=[^\s"'`,;]*\d)[A-Za-z0-9_\-\.=+/]{12,}''',
+    caseSensitive: false,
+  ),
   // Anthropic.
   RegExp(r'sk-ant-[A-Za-z0-9_\-]{20,}'),
   // OpenAI project-scoped.

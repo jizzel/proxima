@@ -419,8 +419,8 @@ class ProviderCapabilities {
 
 | Provider Class | Models | Notes |
 |---|---|---|
-| `AnthropicProvider` | claude-opus-4, claude-sonnet-4, claude-haiku-4 | Native tool calling |
-| `OpenAIProvider` | gpt-4o, gpt-4-turbo, o3 | Native tool calling |
+| `AnthropicProvider` ✅ | claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 | Native tool calling |
+| `OpenAIProvider` ✅ | discovered live via `GET /v1/models` | Native tool calling. Injectable `baseUrl` also serves Groq / Together / OpenRouter / LM Studio (not Azure — different auth and path shape) |
 | `GeminiProvider` | gemini-2.5-pro, gemini-2.0-flash | Tool calling |
 | `GroqProvider` | llama-3.3-70b, mixtral-8x7b | Fast inference, check tool support |
 | `MistralProvider` | mistral-large, codestral | Code-optimized |
@@ -442,6 +442,39 @@ class ProviderCapabilities {
 | `codellama:34b` | 16K | Partial | No | Code generation |
 | `llama3.1:8b` | 8K | Via ReAct | **Yes** | Fast, lightweight tasks |
 | `phi4:14b` | 16K | Via ReAct | **Yes** | Efficient reasoning |
+
+#### Model discovery
+
+Model ids are **not** hardcoded in the CLI. The `/model` picker and tab
+completion both build their list from `LLMProvider.listModels()`:
+
+| Provider | Source |
+|---|---|
+| `AnthropicProvider` | static list in `listModels()` (no discovery endpoint) |
+| `OpenAIProvider` | live `GET $baseUrl/models`, minus non-chat modalities |
+| `OllamaProvider` | live `GET $baseUrl/api/tags` |
+
+Model filtering is an **exclusion** list, not an allow-list: `openai_base_url`
+may target Groq, Together, OpenRouter, or LM Studio, whose ids look nothing like
+OpenAI's (`llama-3.3-70b`, `meta-llama/…`, `anthropic/…`). Everything is kept
+except ids naming a non-chat modality (embeddings, audio, image, rerank).
+
+Context windows are derived per model (`OpenAIProvider.contextWindowFor`) rather
+than advertised as a flat figure: `ContextBuilder` derives the entire token
+budget from `capabilities.contextWindow`, so over-reporting it against a smaller
+model breaks the session as history grows. Unknown ids — likely from a
+compatible endpoint — get a conservative 8K, overridable with
+`openai_context_window`.
+
+`OpenAIProvider` also omits `temperature` for the o-series reasoning models
+(`o1`, `o3`, `o4`), which accept only their default and reject an explicit value
+— including `0.0` — with a 400.
+
+New model releases therefore appear without a code change for OpenAI and Ollama;
+Anthropic needs only its single `listModels()` list updated. Live fetches happen
+in the background at REPL start and are re-tried in the picker only when stdout
+is a TTY; every call is wrapped so an unreachable endpoint returns `[]` rather
+than blocking or throwing. The picker still works fully offline.
 
 ### 6.3 ReAct Fallback
 
@@ -1246,6 +1279,9 @@ final List<RegExp> blockedPatterns = [
 
 ### 15.3 API Key Handling
 
+- Provider keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (env) or
+  `anthropic_api_key`, `openai_api_key` (YAML). Base URLs: `OPENAI_BASE_URL` /
+  `openai_base_url` and `OLLAMA_BASE_URL` / `ollama_base_url`.
 - Keys read from environment variables or `~/.proxima/config.yaml` only
 - Never stored in project directories
 - Never sent to any party except the named model provider

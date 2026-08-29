@@ -13,6 +13,11 @@ class CostCalculator {
     'anthropic/claude-opus-4-6': ModelPricing(15.00, 75.00),
     'anthropic/claude-sonnet-4-6': ModelPricing(3.00, 15.00),
     'anthropic/claude-haiku-4-5-20251001': ModelPricing(0.80, 4.00),
+    'openai/gpt-4o': ModelPricing(2.50, 10.00),
+    'openai/gpt-4o-mini': ModelPricing(0.15, 0.60),
+    'openai/gpt-4-turbo': ModelPricing(10.00, 30.00),
+    'openai/o3': ModelPricing(2.00, 8.00),
+    'openai/o3-mini': ModelPricing(1.10, 4.40),
   };
 
   static double compute(String model, TokenUsage usage) {

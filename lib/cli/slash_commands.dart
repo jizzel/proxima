@@ -6,7 +6,9 @@ import '../core/cost_calculator.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
 import '../core/types.dart';
+import '../providers/anthropic_provider.dart';
 import '../providers/ollama_provider.dart';
+import '../providers/openai_provider.dart';
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
 import '../renderer/picker_widget.dart';
@@ -17,16 +19,25 @@ class SlashCommandHandler {
   final Renderer _renderer;
   final bool Function() _isTty;
   final String _ollamaBaseUrl;
+  final String _openaiBaseUrl;
+  final String? _openaiApiKey;
 
   SlashCommandHandler(
     this._renderer, {
     bool Function()? isTty,
     String? ollamaBaseUrl,
+    String? openaiBaseUrl,
+    String? openaiApiKey,
   }) : _isTty = isTty ?? (() => stdout.hasTerminal),
        _ollamaBaseUrl =
            ollamaBaseUrl ??
            Platform.environment['OLLAMA_BASE_URL'] ??
-           'http://localhost:11434';
+           'http://localhost:11434',
+       _openaiBaseUrl =
+           openaiBaseUrl ??
+           Platform.environment['OPENAI_BASE_URL'] ??
+           'https://api.openai.com/v1',
+       _openaiApiKey = openaiApiKey ?? Platform.environment['OPENAI_API_KEY'];
 
   /// The resolved Ollama base URL this handler will query for model listings.
   /// Injected from `ProximaConfig.ollamaBaseUrl`; falls back to the
@@ -42,6 +53,7 @@ class SlashCommandHandler {
     void Function(String model) onModelChange,
     void Function() onExit, {
     List<String> ollamaModels = const [],
+    List<String> openaiModels = const [],
     void Function(SessionMode mode)? onModeSwitch,
     int contextWindow = 128000,
     void Function(bool debug)? onDebugSwitch,
@@ -68,7 +80,13 @@ class SlashCommandHandler {
         onClear();
       case '/model':
         if (rest.isEmpty) {
-          await _printModels(session.model, ollamaModels, onModelChange);
+          await _printModels(
+            session.model,
+            ollamaModels,
+            onModelChange,
+            cachedOpenaiModels: openaiModels,
+            openaiApiKey: _openaiApiKey,
+          );
         } else {
           onModelChange(rest);
         }
@@ -137,9 +155,11 @@ class SlashCommandHandler {
   Future<void> _printModels(
     String currentModel,
     List<String> cachedOllamaModels,
-    void Function(String model) onModelSwitch,
-  ) async {
-    // Use cached list first; only do a live fetch in interactive (TTY) mode
+    void Function(String model) onModelSwitch, {
+    List<String> cachedOpenaiModels = const [],
+    String? openaiApiKey,
+  }) async {
+    // Use cached lists first; only do a live fetch in interactive (TTY) mode
     // to avoid blocking non-interactive callers (tests, piped output, etc.).
     var ollamaModels = cachedOllamaModels;
     if (ollamaModels.isEmpty && _isTty()) {
@@ -149,9 +169,27 @@ class SlashCommandHandler {
       ).listModels().catchError((_) => <String>[]);
     }
 
-    // Build the full ordered model list.
+    var openaiModels = cachedOpenaiModels;
+    if (openaiModels.isEmpty &&
+        _isTty() &&
+        (openaiApiKey != null && openaiApiKey.isNotEmpty)) {
+      openaiModels = await OpenAIProvider(
+        model: '',
+        apiKey: openaiApiKey,
+        baseUrl: _openaiBaseUrl,
+      ).listModels().catchError((_) => <String>[]);
+    }
+
+    // Build the full ordered model list. Anthropic ids come from the provider
+    // rather than a hardcoded const so new releases need no code change.
+    final anthropicModels = await AnthropicProvider(
+      model: '',
+      apiKey: '',
+    ).listModels().catchError((_) => <String>[]);
+
     final allModels = [
       for (final m in anthropicModels) 'anthropic/$m',
+      for (final m in openaiModels) 'openai/$m',
       for (final m in ollamaModels) 'ollama/$m',
     ];
 
@@ -282,13 +320,6 @@ class SlashCommandHandler {
       console.eraseLine();
     }
   }
-
-  /// Known Anthropic model IDs for listing and tab completion.
-  static const anthropicModels = [
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-    'claude-haiku-4-5-20251001',
-  ];
 
   void _printHelp() {
     _renderer.print('''

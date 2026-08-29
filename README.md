@@ -143,6 +143,31 @@ proxima --model anthropic/claude-sonnet-4-6
 | Claude Sonnet 4.6 | `anthropic/claude-sonnet-4-6` |
 | Claude Haiku 4.5 | `anthropic/claude-haiku-4-5-20251001` |
 
+### OpenAI (cloud)
+
+Requires `OPENAI_API_KEY`:
+
+```bash
+export OPENAI_API_KEY=sk-proj-...
+proxima --model openai/gpt-4o
+```
+
+Available models are discovered live from the API, so newly released models
+appear in `/model` automatically.
+
+**OpenAI-compatible endpoints.** Set `openai_base_url` (or `OPENAI_BASE_URL`) to
+point the same provider at Groq, Together, OpenRouter, or LM Studio:
+
+```yaml
+openai_base_url: https://api.groq.com/openai/v1
+openai_context_window: 8192    # match the model you are serving
+```
+
+Context windows are derived per model for known OpenAI families, and default to
+a conservative 8K for anything else. Set `openai_context_window` when your
+endpoint serves a model with a larger window — over-reporting it makes requests
+fail as the session grows.
+
 ### Ollama (local)
 
 Requires Ollama running locally. No API key needed.
@@ -216,6 +241,9 @@ dry_run: false
 max_iterations: 10
 max_subagent_delegations: 2    # max delegate_to_subagent calls per turn
 anthropic_api_key: sk-ant-...   # takes precedence over $ANTHROPIC_API_KEY
+openai_api_key: sk-proj-...     # takes precedence over $OPENAI_API_KEY
+openai_base_url: https://api.openai.com/v1   # or any OpenAI-compatible endpoint
+openai_context_window: 32768    # optional; override for custom endpoints
 ollama_base_url: http://localhost:11434
 plugin_dirs:                   # additional plugin search paths
   - .proxima/plugins

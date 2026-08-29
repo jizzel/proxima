@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import '../core/secret_masker.dart';
 import '../core/types.dart';
 
 /// Append-only audit log for all permission decisions.
@@ -43,7 +44,7 @@ class AuditLog {
       'timestamp': DateTime.now().toIso8601String(),
       'session_id': sessionId,
       'tool': tool,
-      'args': args,
+      'args': maskSecrets(args),
       'risk_level': riskLevel.name,
       'decision': decision,
       'reason': reason,

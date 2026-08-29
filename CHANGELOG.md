@@ -9,6 +9,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Secret masking before disk writes** (`lib/core/secret_masker.dart`) — tool arguments are persisted to both `~/.proxima/audit.jsonl` and `~/.proxima/sessions/*.json`; secret-shaped values are now replaced with `***` in both. Detects Anthropic (`sk-ant-`), OpenAI (`sk-proj-`, `sk-`), GitHub (`gh[porsu]_`), AWS (`AKIA…`), Slack (`xox[baprs]-`), and JWTs by pattern. `Authorization` headers consume the auth scheme (`Bearer`/`Basic`/`Token`/`Digest`/`APIKey`) *and* the credential after it, so opaque credentials with no provider prefix are masked too. Argument names are normalised (camelCase split, separators collapsed) and matched per segment, so `api-key`, `x-api-key`, `apiKey`, and `API_KEY` are all recognised while `author` and `tokenizer` are not. Masking is applied at the serialisation boundary only (`AuditLog.record()`, `Message.toJson()`, `TaskRecord.toJson()`) — never to the live in-memory session, which `AnthropicProvider` and `Compaction` both read. Terminal output and tool results are deliberately left unmasked so the confirm prompt shows the real command and `--resume` replays correctly. Closes the last unmitigated Critical risk in SPECS §22. 41 new tests
+
+### Fixed
+
+- **`ollama_base_url` ignored by `/model`** — `SlashCommandHandler` read `OLLAMA_BASE_URL` from the environment directly, so a base URL set in `~/.proxima/config.yaml` was honoured by the agent loop but ignored by the model picker. The handler now takes an injectable `ollamaBaseUrl` (matching the existing `isTty` injection pattern) wired from `ProximaConfig`
+
+### Documentation
+
+- SPECS §15.3 documents config precedence (YAML overrides environment); new §15.3.1 specifies secret masking; §18 MVP checklist reconciled against the test suite, with spinning detection and `list_files` `.gitignore` support explicitly marked not implemented; §22 risk register updated
+- README gains a "Secret masking" subsection under Data & Privacy and an explicit config-precedence note
+
 - **Example plugin** (`.proxima/plugins/word-count/`) — fully annotated reference implementation; `run.sh` demonstrates the stdin/stdout/exit-code protocol with inline comments; `README.md` documents how to write, test, and register plugins; intended as a copy-paste starting point for community plugins
 
 ---

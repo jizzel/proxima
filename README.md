@@ -215,7 +215,7 @@ debug: false
 dry_run: false
 max_iterations: 10
 max_subagent_delegations: 2    # max delegate_to_subagent calls per turn
-anthropic_api_key: sk-ant-...   # or set via environment variable
+anthropic_api_key: sk-ant-...   # takes precedence over $ANTHROPIC_API_KEY
 ollama_base_url: http://localhost:11434
 plugin_dirs:                   # additional plugin search paths
   - .proxima/plugins
@@ -224,6 +224,11 @@ plugin_dirs:                   # additional plugin search paths
 ### Project config: `.proxima/config.yaml`
 
 Same format. Project config takes precedence over user config.
+
+**Precedence:** project config → user config → environment variables. A key set
+in either YAML file overrides the matching environment variable
+(`ANTHROPIC_API_KEY`, `OLLAMA_BASE_URL`), so a stale value in `config.yaml` will
+shadow a fresh `export`.
 
 ### Permission modes
 
@@ -328,6 +333,21 @@ plugin_dirs:
 - File backups: `<original_path>.proxima_bak` (deleted after `/undo`)
 
 No data is sent anywhere except to the configured LLM provider.
+
+### Secret masking
+
+Tool arguments are written to both the audit log and session files. Before either
+is written to disk, secret-shaped values are replaced with `***` — API keys
+(Anthropic, OpenAI, GitHub, AWS, Slack), JWTs, and `Authorization` headers
+including the credential after a `Bearer` / `Basic` / `Token` scheme.
+
+Arguments are also masked by name: anything called `api_key`, `token`, `secret`,
+`password`, `auth`, `credential`, or `private_key`. Separators and casing do not
+matter — `api-key`, `x-api-key`, `apiKey`, and `API_KEY` are all recognised —
+while similar-looking names such as `author` are left alone.
+
+Terminal output is deliberately **not** masked: the confirmation prompt shows you
+the real command you are approving. Masking is applied only on the way to disk.
 
 ---
 

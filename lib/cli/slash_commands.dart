@@ -16,9 +16,22 @@ import '../tools/tool_registry.dart';
 class SlashCommandHandler {
   final Renderer _renderer;
   final bool Function() _isTty;
+  final String _ollamaBaseUrl;
 
-  SlashCommandHandler(this._renderer, {bool Function()? isTty})
-    : _isTty = isTty ?? (() => stdout.hasTerminal);
+  SlashCommandHandler(
+    this._renderer, {
+    bool Function()? isTty,
+    String? ollamaBaseUrl,
+  }) : _isTty = isTty ?? (() => stdout.hasTerminal),
+       _ollamaBaseUrl =
+           ollamaBaseUrl ??
+           Platform.environment['OLLAMA_BASE_URL'] ??
+           'http://localhost:11434';
+
+  /// The resolved Ollama base URL this handler will query for model listings.
+  /// Injected from `ProximaConfig.ollamaBaseUrl`; falls back to the
+  /// `OLLAMA_BASE_URL` environment variable, then to localhost.
+  String get ollamaBaseUrl => _ollamaBaseUrl;
 
   /// Returns true if input was a slash command (consumed).
   /// Returns false if input should be passed to the agent.
@@ -130,11 +143,9 @@ class SlashCommandHandler {
     // to avoid blocking non-interactive callers (tests, piped output, etc.).
     var ollamaModels = cachedOllamaModels;
     if (ollamaModels.isEmpty && _isTty()) {
-      final ollamaBaseUrl =
-          Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
       ollamaModels = await OllamaProvider(
         model: '',
-        baseUrl: ollamaBaseUrl,
+        baseUrl: _ollamaBaseUrl,
       ).listModels().catchError((_) => <String>[]);
     }
 

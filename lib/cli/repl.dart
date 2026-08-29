@@ -118,7 +118,10 @@ class ProximaRepl {
     );
 
     _sessionStorage = SessionStorage.forCurrentUser();
-    _slashCommands = SlashCommandHandler(_renderer);
+    _slashCommands = SlashCommandHandler(
+      _renderer,
+      ollamaBaseUrl: _config.ollamaBaseUrl,
+    );
 
     // Load or create session.
     if (resumeSessionId != null) {

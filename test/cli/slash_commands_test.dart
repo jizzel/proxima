@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:proxima/cli/slash_commands.dart';
+import 'package:proxima/providers/anthropic_provider.dart';
 import 'package:proxima/core/session.dart';
 import 'package:proxima/core/session_storage.dart';
 import 'package:proxima/core/config.dart';
@@ -220,12 +221,15 @@ void main() {
       );
       expect(result, isTrue);
       final out = renderer.output;
-      // The non-TTY fallback still prints the anthropic model names.
+      // The non-TTY fallback still prints the anthropic model names. Ids now
+      // come from AnthropicProvider.listModels() rather than a hardcoded const,
+      // so assert against that single source of truth.
       expect(out, contains('anthropic'));
-      expect(
-        SlashCommandHandler.anthropicModels.any((m) => out.contains(m)),
-        isTrue,
-      );
+      final knownModels = await AnthropicProvider(
+        model: '',
+        apiKey: '',
+      ).listModels();
+      expect(knownModels.any((m) => out.contains(m)), isTrue);
     },
   );
 

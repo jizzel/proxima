@@ -102,6 +102,11 @@ both. Terminal output is intentionally unmasked so the confirm prompt shows the
 real command. Tool *results* are intentionally unmasked so `--resume` replays
 correctly.
 
+**Provider model lists** come from `LLMProvider.listModels()` — OpenAI and Ollama
+fetch live, Anthropic returns a static list. Do **not** reintroduce hardcoded
+model consts in the CLI layer; the `/model` picker and tab completion both read
+from the providers so new releases need no code change.
+
 ## MVP Checklist
 
 Before a feature is considered complete, verify against the MVP checklist in `SPECS.md` Section 18. All items must pass end-to-end.

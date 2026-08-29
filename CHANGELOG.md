@@ -9,6 +9,18 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI provider** (`lib/providers/openai_provider.dart`) — third provider alongside Anthropic and Ollama, with native tool calling and SSE streaming. `--model openai/gpt-4o`, `openai_api_key` / `OPENAI_API_KEY`. Handles the four wire-format divergences from Anthropic: the system prompt is sent as a `role: "system"` message rather than a top-level field; tool schemas nest under `function`/`parameters`; tool results use `role: "tool"` with `tool_call_id`; and assistant `tool_calls[].function.arguments` is a JSON-encoded *string*, not an object. `tool_calls[].id` is preserved into `ToolCall.callId` — OpenAI rejects a `tool_call_id` it did not issue, and the agent loop replays it on the next request. Omits `temperature` for the o-series reasoning models, which accept only their default and reject an explicit value — including `0.0` — with a 400. Uses `max_completion_tokens` (`max_tokens` is deprecated and rejected by `o*` models) and sets `stream_options.include_usage` so streamed responses still report token usage and cost
+- **Injectable `openai_base_url`** — the same provider serves any endpoint speaking the OpenAI wire format (Groq, Together, OpenRouter, LM Studio) with no new provider class. Azure OpenAI is *not* supported: it requires an `api-key` header, a deployment-specific path, and an `api-version` query parameter
+- **Write critic works with any provider** — `ProximaRepl` built a second `ProviderRegistry` for the `critic_on_write` subagent carrying only the Anthropic and Ollama credentials, so an OpenAI-backed `write_file` or `patch_file` threw an auth error before the permission prompt could be shown. Both call sites now share a single `_buildProviderRegistry()` helper so credentials cannot drift apart again
+- **OpenAI pricing** in `CostCalculator` for gpt-4o, gpt-4o-mini, gpt-4-turbo, o3, and o3-mini
+- **HTTP-level provider tests** — first use of `package:http/testing.dart`'s `MockClient` in this repo, injected through the existing `http.Client?` constructor seam. 23 tests assert the decoded request body and parsed response, covering all four wire divergences, error-code mapping, SSE streaming, and model discovery. 9 further tests cover `ProviderRegistry` dispatch
+
+### Changed
+
+- **Model lists are no longer hardcoded in the CLI** — the `/model` picker and tab completion now build their list from `LLMProvider.listModels()`. `OpenAIProvider` and `OllamaProvider` discover models live — OpenAI filtering is an exclusion list rather than an allow-list, so chat models from compatible endpoints (Groq, Together, OpenRouter, LM Studio) survive discovery instead of being filtered out; `AnthropicProvider` returns a static list. New OpenAI and Ollama releases appear with no code change. Removes the duplicated `SlashCommandHandler.anthropicModels` const and its copy in `repl.dart`. Live fetches run in the background at REPL start, are re-tried in the picker only when stdout is a TTY, and always degrade to `[]` — the picker still works offline
+
 ---
 
 ## [1.2.0] — 2026-08-29

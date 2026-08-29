@@ -16,6 +16,8 @@ class ProximaConfig {
   final int maxRetriesSchema;
   final int maxSubagentDelegations;
   final String? anthropicApiKey;
+  final String? openaiApiKey;
+  final String? openaiBaseUrl;
   final String? ollamaBaseUrl;
   final bool criticOnWrite;
   final String? fallbackModel;
@@ -34,6 +36,8 @@ class ProximaConfig {
     required this.maxRetriesSchema,
     this.maxSubagentDelegations = 2,
     this.anthropicApiKey,
+    this.openaiApiKey,
+    this.openaiBaseUrl,
     this.ollamaBaseUrl,
     this.criticOnWrite = true,
     this.fallbackModel,
@@ -54,6 +58,9 @@ class ProximaConfig {
     maxSubagentDelegations: 2,
     criticOnWrite: true,
     anthropicApiKey: Platform.environment['ANTHROPIC_API_KEY'],
+    openaiApiKey: Platform.environment['OPENAI_API_KEY'],
+    openaiBaseUrl:
+        Platform.environment['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1',
     ollamaBaseUrl:
         Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
     pluginDirs: const ['.proxima/plugins'],
@@ -118,6 +125,8 @@ class ProximaConfig {
       maxSubagentDelegations:
           yaml['max_subagent_delegations'] as int? ?? maxSubagentDelegations,
       anthropicApiKey: yaml['anthropic_api_key'] as String? ?? anthropicApiKey,
+      openaiApiKey: yaml['openai_api_key'] as String? ?? openaiApiKey,
+      openaiBaseUrl: yaml['openai_base_url'] as String? ?? openaiBaseUrl,
       ollamaBaseUrl: yaml['ollama_base_url'] as String? ?? ollamaBaseUrl,
       criticOnWrite: yaml['critic_on_write'] as bool? ?? criticOnWrite,
       fallbackModel: yaml['fallback_model'] as String? ?? fallbackModel,
@@ -165,6 +174,8 @@ class ProximaConfig {
     bool? dryRun,
     int? maxIterations,
     String? anthropicApiKey,
+    String? openaiApiKey,
+    String? openaiBaseUrl,
     String? ollamaBaseUrl,
     List<String>? pluginDirs,
   }) => ProximaConfig(
@@ -179,6 +190,8 @@ class ProximaConfig {
     maxRetriesSchema: maxRetriesSchema,
     maxSubagentDelegations: maxSubagentDelegations,
     anthropicApiKey: anthropicApiKey ?? this.anthropicApiKey,
+    openaiApiKey: openaiApiKey ?? this.openaiApiKey,
+    openaiBaseUrl: openaiBaseUrl ?? this.openaiBaseUrl,
     ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
     criticOnWrite: criticOnWrite,
     fallbackModel: fallbackModel,

@@ -3,6 +3,7 @@ import 'provider_interface.dart';
 import 'anthropic_provider.dart';
 import 'fallback_provider.dart';
 import 'ollama_provider.dart';
+import 'openai_provider.dart';
 import 'react_fallback.dart';
 
 /// Creates providers from config strings like "anthropic/claude-sonnet-4-6"
@@ -44,6 +45,7 @@ class ProviderRegistry {
     return switch (providerName) {
       'anthropic' => _createAnthropic(modelName),
       'ollama' => _createOllama(modelName),
+      'openai' => _createOpenAI(modelName),
       _ => throw ArgumentError('Unknown provider "$providerName".'),
     };
   }
@@ -57,6 +59,19 @@ class ProviderRegistry {
       );
     }
     return AnthropicProvider(model: model, apiKey: apiKey);
+  }
+
+  LLMProvider _createOpenAI(String model) {
+    final apiKey = _env['OPENAI_API_KEY'] ?? '';
+    if (apiKey.isEmpty) {
+      throw LLMError(
+        LLMErrorKind.auth,
+        'OPENAI_API_KEY environment variable is not set.',
+      );
+    }
+    final baseUrl = _env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1';
+    // OpenAI has native tool use — no ReAct wrapper needed.
+    return OpenAIProvider(model: model, apiKey: apiKey, baseUrl: baseUrl);
   }
 
   LLMProvider _createOllama(String model) {

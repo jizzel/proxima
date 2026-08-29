@@ -4,7 +4,9 @@ import '../core/config.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
 import '../core/types.dart';
+import '../providers/anthropic_provider.dart';
 import '../providers/ollama_provider.dart';
+import '../providers/openai_provider.dart';
 import '../providers/provider_registry.dart';
 import '../tools/tool_registry.dart';
 import '../tools/file/delete_file_tool.dart';
@@ -72,6 +74,8 @@ class ProximaRepl {
 
   /// Ollama model list, fetched once at startup (best-effort).
   List<String> _ollamaModels = [];
+  List<String> _openaiModels = [];
+  List<String> _anthropicModels = [];
 
   ProximaRepl(this._config);
 
@@ -95,13 +99,7 @@ class ProximaRepl {
       criticCallback: _config.criticOnWrite
           ? (toolCall) async {
               // Critic runs with the active model; runner is created on demand.
-              final providerRegistry = ProviderRegistry(
-                env: {
-                  'ANTHROPIC_API_KEY': _config.anthropicApiKey ?? '',
-                  'OLLAMA_BASE_URL':
-                      _config.ollamaBaseUrl ?? 'http://localhost:11434',
-                },
-              );
+              final providerRegistry = _buildProviderRegistry();
               final provider = providerRegistry.create(_activeModel);
               final runner = SubagentRunner(provider: provider);
               final content =
@@ -121,6 +119,8 @@ class ProximaRepl {
     _slashCommands = SlashCommandHandler(
       _renderer,
       ollamaBaseUrl: _config.ollamaBaseUrl,
+      openaiBaseUrl: _config.openaiBaseUrl,
+      openaiApiKey: _config.openaiApiKey,
     );
 
     // Load or create session.
@@ -147,8 +147,45 @@ class ProximaRepl {
       acceptEditsMode: _replMode == _ReplMode.acceptEdits,
     );
 
-    // Pre-fetch Ollama model list in background (non-fatal).
+    // Pre-fetch model lists in background (non-fatal).
     _fetchOllamaModels();
+    _fetchOpenaiModels();
+    _fetchAnthropicModels();
+  }
+
+  /// Single source for provider credentials.
+  ///
+  /// Both the agent loop and the write critic create providers; building the
+  /// env map in one place stops them drifting apart — the critic previously
+  /// omitted the OpenAI keys, so an OpenAI-backed write threw an auth error
+  /// before the permission prompt could be shown.
+  ProviderRegistry _buildProviderRegistry() => ProviderRegistry(
+    env: {
+      'ANTHROPIC_API_KEY': _config.anthropicApiKey ?? '',
+      'OPENAI_API_KEY': _config.openaiApiKey ?? '',
+      'OPENAI_BASE_URL': _config.openaiBaseUrl ?? 'https://api.openai.com/v1',
+      'OLLAMA_BASE_URL': _config.ollamaBaseUrl ?? 'http://localhost:11434',
+    },
+  );
+
+  void _fetchOpenaiModels() {
+    final apiKey = _config.openaiApiKey;
+    if (apiKey == null || apiKey.isEmpty) return;
+    OpenAIProvider(
+          model: '',
+          apiKey: apiKey,
+          baseUrl: _config.openaiBaseUrl ?? 'https://api.openai.com/v1',
+        )
+        .listModels()
+        .then((models) => _openaiModels = models)
+        .catchError((_) => <String>[]); // silently ignore if unreachable
+  }
+
+  void _fetchAnthropicModels() {
+    AnthropicProvider(model: '', apiKey: '')
+        .listModels()
+        .then((models) => _anthropicModels = models)
+        .catchError((_) => <String>[]);
   }
 
   void _fetchOllamaModels() {
@@ -166,12 +203,7 @@ class ProximaRepl {
   AgentLoop _getAgentLoop() {
     if (_agentLoop != null) return _agentLoop!;
 
-    final providerRegistry = ProviderRegistry(
-      env: {
-        'ANTHROPIC_API_KEY': _config.anthropicApiKey ?? '',
-        'OLLAMA_BASE_URL': _config.ollamaBaseUrl ?? 'http://localhost:11434',
-      },
-    );
+    final providerRegistry = _buildProviderRegistry();
 
     final provider = providerRegistry.create(
       _activeModel,
@@ -287,6 +319,7 @@ class ProximaRepl {
         (model) => _switchModel(model),
         () => _running = false,
         ollamaModels: _ollamaModels,
+        openaiModels: _openaiModels,
         onModeSwitch: (mode) => _switchMode(mode),
         contextWindow: _contextWindow,
         onDebugSwitch: (debug) => _switchDebug(debug),
@@ -385,7 +418,8 @@ class ProximaRepl {
       // in the panel so as not to show an incomplete set.
       if (partial.isEmpty) return [];
       final allModels = [
-        for (final m in SlashCommandHandler.anthropicModels) 'anthropic/$m',
+        for (final m in _anthropicModels) 'anthropic/$m',
+        for (final m in _openaiModels) 'openai/$m',
         for (final m in _ollamaModels) 'ollama/$m',
       ];
       return allModels

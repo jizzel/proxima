@@ -22,6 +22,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 - **`plugin_loader.dart` — fully async I/O** — `_loadOne` converted from sync to `async`; `existsSync` → `exists`, `readAsStringSync` → `readAsString`, `statSync` → `stat`, `list().toList()` → `await for`; prevents blocking the Dart event loop during plugin discovery at startup.
 - **`find_references_tool.dart` — streaming directory walk** — `_walk` now uses `await for` instead of `dir.list().toList()`; processes entries one at a time and exits early when `max_results` is reached, avoiding loading the full directory listing into memory on large codebases.
+
 ### Security
 
 - **Secret masking before disk writes** (`lib/core/secret_masker.dart`) — tool arguments are persisted to both `~/.proxima/audit.jsonl` and `~/.proxima/sessions/*.json`; secret-shaped values are now replaced with `***` in both. Detects Anthropic (`sk-ant-`), OpenAI (`sk-proj-`, `sk-`), GitHub (`gh[porsu]_`), AWS (`AKIA…`), Slack (`xox[baprs]-`), and JWTs by pattern. `Authorization` headers consume the auth scheme (`Bearer`/`Basic`/`Token`/`Digest`/`APIKey`) *and* the credential after it, so opaque credentials with no provider prefix are masked too. Bare schemes (`Bearer`/`Basic`/`Digest`/`APIKey`/`Token`) are matched without an `Authorization:` prefix, covering headers passed structurally as `{'headers': {'Authorization': 'Token abc'}}`. Argument names are normalised (camelCase split, separators collapsed) and matched per segment, so `api-key`, `x-api-key`, `apiKey`, `API_KEY`, and `Authorization` are all recognised while `author` and `tokenizer` are not. Masking is applied at the serialisation boundary only (`AuditLog.record()`, `Message.toJson()`, `TaskRecord.toJson()`) — never to the live in-memory session, which `AnthropicProvider` and `Compaction` both read. Terminal output and tool results are deliberately left unmasked so the confirm prompt shows the real command and `--resume` replays correctly. Closes the last unmitigated Critical risk in SPECS §22. 46 new tests
@@ -32,7 +33,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Documentation
 
-- SPECS §15.3 documents config precedence (YAML overrides environment); new §15.3.1 specifies secret masking; §18 MVP checklist reconciled against the test suite, with spinning detection and `list_files` `.gitignore` support explicitly marked not implemented; §22 risk register updated
+- SPECS §15.3 documents config precedence (YAML overrides environment); new §15.3.1 specifies secret masking; §18 MVP checklist reconciled against the test suite, with `list_files` `.gitignore` support explicitly marked not implemented; §22 risk register updated
 - README gains a "Secret masking" subsection under Data & Privacy and an explicit config-precedence note
 
 ---

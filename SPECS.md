@@ -1440,7 +1440,7 @@ Proxima is not an MVP until all of these pass end-to-end:
 - [x] Multi-turn reasoning works (agent calls multiple tools before responding)
 - [x] Max iteration limit is enforced — no infinite loops
 - [x] Stuck detection fires after 3 identical tool calls
-- [ ] Spinning detection fires after 6 consecutive read-only calls — **not implemented**
+- [x] Spinning detection fires after 6 consecutive read-only calls
 - [x] Schema validator rejects malformed LLM responses
 
 **Permission Gate**

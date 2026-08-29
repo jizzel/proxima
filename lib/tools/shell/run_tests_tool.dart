@@ -42,12 +42,18 @@ class RunTestsTool implements ProximaTool {
 
     final framework = _detectFramework(workingDir);
 
+    Process? process;
     try {
-      final result = await Process.run(
+      // Started, not run: a timed-out `Process.run` abandons the Future but
+      // leaves the test runner executing invisibly. See RunCommandTool.
+      process = await Process.start(
         RunCommandTool.shellExecutable,
         [...RunCommandTool.shellArgs, command],
         workingDirectory: workingDir,
         runInShell: false,
+      );
+      final result = await RunCommandTool.collect(
+        process,
       ).timeout(const Duration(seconds: 120));
 
       final rawOutput = StringBuffer();
@@ -80,6 +86,11 @@ class RunTestsTool implements ProximaTool {
 
       return output.toString().trim();
     } on TimeoutException {
+      process?.kill(ProcessSignal.sigkill);
+      await process?.exitCode.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => -1,
+      );
       throw ToolError(
         name,
         'Tests timed out after 120s',

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import '../../core/types.dart';
 import '../tool_interface.dart';
@@ -29,6 +30,20 @@ class RunCommandTool implements ProximaTool {
     'required': ['command'],
   };
 
+  /// Gathers stdout, stderr, and the exit code from a started [process],
+  /// producing the same shape `Process.run` would have returned.
+  static Future<ProcessResult> collect(Process process) async {
+    final stdoutFuture = process.stdout.transform(utf8.decoder).join();
+    final stderrFuture = process.stderr.transform(utf8.decoder).join();
+    final exitCode = await process.exitCode;
+    return ProcessResult(
+      process.pid,
+      exitCode,
+      await stdoutFuture,
+      await stderrFuture,
+    );
+  }
+
   /// The shell used to run commands.
   ///
   /// Hardcoding `bash` broke every Windows install: `bash.exe` on Windows
@@ -50,12 +65,20 @@ class RunCommandTool implements ProximaTool {
       throw ToolError(name, 'Command blocked by security policy: $command');
     }
 
+    // Process.start rather than Process.run: `run(...).timeout(...)` abandons
+    // the Future but leaves the child running, so a "timed out" command keeps
+    // executing invisibly — unacceptable for a tool behind a permission gate,
+    // and on Windows it also holds the working directory open.
+    final process = await Process.start(
+      shellExecutable,
+      [...shellArgs, command],
+      workingDirectory: workingDir,
+      runInShell: false,
+    );
+
     try {
-      final result = await Process.run(
-        shellExecutable,
-        [...shellArgs, command],
-        workingDirectory: workingDir,
-        runInShell: false,
+      final result = await collect(
+        process,
       ).timeout(Duration(seconds: timeoutSeconds));
 
       final output = StringBuffer();
@@ -69,6 +92,15 @@ class RunCommandTool implements ProximaTool {
 
       return output.toString().trim();
     } on TimeoutException {
+      // Kill the whole process tree; the shell may have spawned children.
+      process.kill(ProcessSignal.sigkill);
+      // Give the OS a moment to release handles before the caller (or a test
+      // tearDown) tries to remove the working directory — Windows refuses to
+      // delete a directory a live process still holds open.
+      await process.exitCode.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => -1,
+      );
       throw ToolError(
         name,
         'Command timed out after ${timeoutSeconds}s: $command',

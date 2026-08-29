@@ -63,6 +63,33 @@ void main() {
       );
     });
 
+    test('kills the process on timeout instead of orphaning it', () async {
+      // Regression: Process.run(...).timeout(...) abandons the Future but
+      // leaves the child running — a command the user was told had timed out
+      // kept executing, and on Windows held the working directory open so
+      // cleanup failed.
+      final marker = p.join(tempDir.path, 'orphan_marker');
+      final slowThenWrite = isWindows
+          ? 'ping -n 4 127.0.0.1 >nul & type nul > "$marker"'
+          : 'sleep 2; touch "$marker"';
+
+      await expectLater(
+        tool.execute({
+          'command': slowThenWrite,
+          'timeout_seconds': 1,
+        }, tempDir.path),
+        throwsA(isA<ToolError>()),
+      );
+
+      // Had the process survived, it would create the marker by now.
+      await Future.delayed(const Duration(seconds: 3));
+      expect(
+        await File(marker).exists(),
+        isFalse,
+        reason: 'the timed-out process kept running',
+      );
+    });
+
     group('security policy', () {
       // The gate is defence in depth: the permission layer classifies these as
       // blocked too, but the tool must refuse them even if called directly.

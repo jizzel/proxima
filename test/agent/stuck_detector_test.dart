@@ -53,4 +53,55 @@ void main() {
       expect(StuckDetector.isStuck([]), isFalse);
     });
   });
+
+  group('StuckDetector.isSpinning', () {
+    test('not spinning with fewer than window calls', () {
+      final log = List.generate(
+        5,
+        (_) => call('read_file', {'path': 'a.dart'}),
+      );
+      expect(StuckDetector.isSpinning(log), isFalse);
+    });
+
+    test('detects 6 consecutive read-only calls', () {
+      final log = [
+        call('read_file', {'path': 'a.dart'}),
+        call('list_files', {}),
+        call('glob', {'pattern': '*.dart'}),
+        call('search', {'query': 'foo'}),
+        call('find_references', {'symbol': 'bar'}),
+        call('get_imports', {'path': 'a.dart'}),
+      ];
+      expect(StuckDetector.isSpinning(log), isTrue);
+    });
+
+    test('not spinning when a mutating call is present', () {
+      final log = [
+        call('read_file', {'path': 'a.dart'}),
+        call('list_files', {}),
+        call('glob', {'pattern': '*.dart'}),
+        call('search', {'query': 'foo'}),
+        call('find_references', {'symbol': 'bar'}),
+        call('write_file', {'path': 'a.dart', 'content': 'x'}),
+      ];
+      expect(StuckDetector.isSpinning(log), isFalse);
+    });
+
+    test('only looks at last window calls', () {
+      final log = [
+        call('write_file', {'path': 'a.dart', 'content': 'x'}),
+        call('read_file', {'path': 'a.dart'}),
+        call('list_files', {}),
+        call('glob', {'pattern': '*.dart'}),
+        call('search', {'query': 'foo'}),
+        call('find_references', {'symbol': 'bar'}),
+        call('get_imports', {'path': 'a.dart'}),
+      ];
+      expect(StuckDetector.isSpinning(log), isTrue);
+    });
+
+    test('empty log is not spinning', () {
+      expect(StuckDetector.isSpinning([]), isFalse);
+    });
+  });
 }

@@ -9,7 +9,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- **Example plugin** (`.proxima/plugins/word-count/`) — fully annotated reference implementation; `run.sh` demonstrates the stdin/stdout/exit-code protocol with inline comments; `README.md` documents how to write, test, and register plugins; intended as a copy-paste starting point for community plugins
+### Added
+
+#### Agent Loop — Spinning Detection
+
+- **`StuckDetector.isSpinning(toolLog, {int window = 6})`** — second stuck-detection mechanism that fires when the last `window` calls are all read-only tools (`read_file`, `list_files`, `glob`, `search`, `search_symbol`, `find_references`, `get_imports`, `git_status`, `git_diff`, `git_log`). Catches models that loop on reads without ever writing — not caught by the identical-call detector.
+- **`StuckDetector.spinWindow = 6`** — public constant exposed for callers that need to slice the log for display.
+- **`AgentCallbacks.onStuck` gains `reason` parameter** (`'stuck'` | `'spinning'`, default `'stuck'`) — lets the renderer show a tailored message for each case; existing callers unaffected.
+- **`TaskSummaryRenderer.renderStuck` differentiated message** — spinning shows *"Agent is reading without making progress — last N calls were all read-only"*; stuck shows the existing *"Repeated tool calls detected"* message.
+
+### Improved
+
+- **`plugin_loader.dart` — fully async I/O** — `_loadOne` converted from sync to `async`; `existsSync` → `exists`, `readAsStringSync` → `readAsString`, `statSync` → `stat`, `list().toList()` → `await for`; prevents blocking the Dart event loop during plugin discovery at startup.
+- **`find_references_tool.dart` — streaming directory walk** — `_walk` now uses `await for` instead of `dir.list().toList()`; processes entries one at a time and exits early when `max_results` is reached, avoiding loading the full directory listing into memory on large codebases.
 
 ---
 

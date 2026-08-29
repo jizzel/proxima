@@ -373,8 +373,8 @@ Proxima is structured as nine explicit layers with strict downward-only dependen
                                 │
 ┌───────────────────────────────▼─────────────────────────────────┐
 │  L3  Agent Loop                                                 │
-│      think → act → observe · stuck detection · max 10 iter     │
-│      schema validator · retry logic                             │
+│      think → act → observe · max 10 iter · schema validator    │
+│      stuck (3 identical calls) · spinning (6 read-only calls)  │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │
 ┌───────────────┬───────────────▼───────────────┐

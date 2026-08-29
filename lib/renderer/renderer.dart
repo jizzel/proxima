@@ -169,9 +169,12 @@ class Renderer implements AgentCallbacks {
   }
 
   @override
-  Future<bool> onStuck(List<ToolCall> recentCalls) async {
+  Future<bool> onStuck(
+    List<ToolCall> recentCalls, {
+    String reason = 'stuck',
+  }) async {
     hideSpinner();
-    return TaskSummaryRenderer.renderStuck(recentCalls);
+    return TaskSummaryRenderer.renderStuck(recentCalls, reason: reason);
   }
 
   @override

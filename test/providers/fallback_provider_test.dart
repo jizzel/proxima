@@ -179,4 +179,45 @@ void main() {
     // which need API keys. The unit coverage above is sufficient for the
     // FallbackProvider contract; registry integration is tested via e2e.
   });
+  group('unreachable primary with a fallback', () {
+    // Regression: agent_loop short-circuited on an "unreachable" network error
+    // before calling complete(), which is the only path that reaches the
+    // secondary — so fallback_model never fired during the outage it covers.
+    test(
+      'advertises hasFallback so the agent loop keeps the fallback path',
+      () {
+        final wrapped = FallbackProvider(
+          SuccessProvider('primary'),
+          SuccessProvider('secondary'),
+        );
+        expect(wrapped.capabilities.hasFallback, isTrue);
+        expect(
+          SuccessProvider('bare').capabilities.hasFallback,
+          isFalse,
+          reason: 'a bare provider must fail fast instead',
+        );
+      },
+    );
+
+    test(
+      'complete() reaches the secondary on an unreachable network error',
+      () async {
+        final wrapped = FallbackProvider(
+          FailingProvider(kind: LLMErrorKind.network),
+          SuccessProvider('secondary'),
+        );
+        final response = await wrapped.complete(dummyRequest);
+        expect((response.body as FinalResponse).text, equals('from secondary'));
+      },
+    );
+
+    test('preserves the primary capabilities it wraps', () {
+      final wrapped = FallbackProvider(
+        SuccessProvider('primary'),
+        SuccessProvider('secondary'),
+      );
+      expect(wrapped.capabilities.contextWindow, equals(10000));
+      expect(wrapped.capabilities.nativeToolUse, isTrue);
+    });
+  });
 }

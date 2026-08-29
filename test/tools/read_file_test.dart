@@ -42,8 +42,8 @@ void main() {
   });
 
   test('throws ToolError for missing file', () async {
-    expect(
-      () => tool.execute({'path': 'nonexistent.txt'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': 'nonexistent.txt'}, tempDir.path),
       throwsA(
         isA<dynamic>().having(
           (e) => e.toString(),
@@ -55,8 +55,8 @@ void main() {
   });
 
   test('throws ToolError for path traversal', () async {
-    expect(
-      () => tool.execute({'path': '../escape.txt'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': '../escape.txt'}, tempDir.path),
       throwsA(
         isA<dynamic>().having(
           (e) => e.toString(),

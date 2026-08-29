@@ -67,8 +67,8 @@ void main() {
   test('throws ToolError for non-git directory', () async {
     final nonGit = await Directory.systemTemp.createTemp('proxima_nongit_');
     addTearDown(() => nonGit.delete(recursive: true));
-    expect(
-      () => tool.execute({'ref': 'HEAD'}, nonGit.path),
+    await expectLater(
+      tool.execute({'ref': 'HEAD'}, nonGit.path),
       throwsA(isA<ToolError>()),
     );
   });

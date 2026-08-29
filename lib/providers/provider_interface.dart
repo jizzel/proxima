@@ -7,11 +7,20 @@ class ProviderCapabilities {
   final int contextWindow;
   final List<String> availableModels;
 
+  /// Whether a secondary provider stands behind this one.
+  ///
+  /// The agent loop needs this to decide what to do when a stream fails
+  /// against an unreachable server: with no fallback, calling `complete()`
+  /// just repeats the same error, but with one it is the *only* path that
+  /// reaches the secondary.
+  final bool hasFallback;
+
   const ProviderCapabilities({
     required this.nativeToolUse,
     required this.streaming,
     required this.contextWindow,
     this.availableModels = const [],
+    this.hasFallback = false,
   });
 }
 

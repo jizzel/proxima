@@ -143,8 +143,8 @@ class HiddenClass {}
   });
 
   test('rejects path outside workingDir', () async {
-    expect(
-      () => tool.execute({'symbol': 'Foo', 'path': '/etc'}, tempDir.path),
+    await expectLater(
+      tool.execute({'symbol': 'Foo', 'path': '/etc'}, tempDir.path),
       throwsA(isA<ToolError>()),
     );
   });

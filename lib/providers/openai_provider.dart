@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../core/types.dart';
 import 'provider_interface.dart';
+import 'transport.dart';
 
 /// OpenAI Chat Completions provider with native tool use and SSE streaming.
 ///
@@ -98,6 +99,34 @@ class OpenAIProvider implements LLMProvider {
     }
 
     if (response.statusCode != 200) {
+      // The API names the parameter it will not accept; drop it and retry once
+      // rather than trying to predict per-model support from the name.
+      final unsupported = _unsupportedParameter(
+        response.statusCode,
+        response.body,
+      );
+      final needsEffortNone = _needsReasoningEffortNone(
+        response.statusCode,
+        response.body,
+      );
+      if ((unsupported != null && body.containsKey(unsupported)) ||
+          needsEffortNone) {
+        final retryBody = Map<String, dynamic>.from(body);
+        if (unsupported != null) retryBody.remove(unsupported);
+        if (needsEffortNone) retryBody['reasoning_effort'] = 'none';
+        final retry = await transportPost(
+          _client,
+          Uri.parse('$_baseUrl/chat/completions'),
+          headers: _headers(),
+          body: jsonEncode(retryBody),
+          providerName: name,
+          baseUrl: _baseUrl,
+        );
+        if (retry.statusCode != 200) {
+          throw _parseError(retry.statusCode, retry.body);
+        }
+        return _parseResponse(jsonDecode(retry.body) as Map<String, dynamic>);
+      }
       throw _parseError(response.statusCode, response.body);
     }
 
@@ -122,6 +151,9 @@ class OpenAIProvider implements LLMProvider {
 
     if (response.statusCode != 200) {
       final errorBody = await response.stream.bytesToString();
+      // The agent loop re-issues via complete() when the stream fails, and
+      // complete() performs the unsupported-parameter retry — so surfacing the
+      // error here is enough; no need to duplicate the retry on this path.
       throw _parseError(response.statusCode, errorBody);
     }
 
@@ -132,15 +164,11 @@ class OpenAIProvider implements LLMProvider {
     // A connection dropped mid-stream throws from the body stream too; it must
     // also surface as an LLMError so the agent loop and FallbackProvider can
     // handle it rather than crashing the turn.
-    final decoded = response.stream
-        .transform(utf8.decoder)
-        .handleError(
-          (Object e) => throw LLMError(
-            LLMErrorKind.network,
-            'Stream from $_baseUrl failed: $e',
-          ),
-          test: (e) => e is! LLMError,
-        );
+    final decoded = withStreamTransportErrors(
+      response.stream.transform(utf8.decoder),
+      providerName: name,
+      baseUrl: _baseUrl,
+    );
 
     await for (final chunk in decoded) {
       buffer.write(chunk);
@@ -236,7 +264,10 @@ class OpenAIProvider implements LLMProvider {
               .map((m) => (m as Map<String, dynamic>)['id'] as String? ?? '')
               .where(_isChatModel)
               .toList()
-            ..sort();
+            ..sort((a, b) {
+              final rank = _modelRank(a).compareTo(_modelRank(b));
+              return rank != 0 ? rank : a.compareTo(b);
+            });
       return ids;
     } catch (_) {
       return [];
@@ -257,7 +288,10 @@ class OpenAIProvider implements LLMProvider {
   /// the occasional false positive is one unusable entry in the picker.
   static bool _isChatModel(String id) {
     if (id.isEmpty) return false;
-    const excluded = [
+    final lower = id.toLowerCase();
+
+    // Non-chat modalities — these cannot serve a completion at all.
+    const excludedSubstrings = [
       'embed',
       'whisper',
       'tts',
@@ -272,20 +306,77 @@ class OpenAIProvider implements LLMProvider {
       'flux',
       'guard',
     ];
-    final lower = id.toLowerCase();
-    return !excluded.any(lower.contains);
+    if (excludedSubstrings.any(lower.contains)) return false;
+
+    // Legacy /v1/completions models. They appear in the catalogue but 404 on
+    // /v1/chat/completions, so offering them in the picker is a trap.
+    if (lower.startsWith('babbage') || lower.startsWith('davinci')) {
+      return false;
+    }
+    // Only OpenAI's gpt-3.5-turbo-instruct is a completions model. "Instruct"
+    // is standard naming for open-weight *chat* models (qwen2.5-coder-instruct,
+    // mistral-instruct), so this must not be a blanket substring rule.
+    if (lower.startsWith('gpt-3.5-turbo-instruct')) return false;
+
+    // A bare alias, not a selectable model. Matched exactly rather than by
+    // substring — `gpt-5.3-chat-latest` is a real model.
+    if (lower == 'chat-latest') return false;
+
+    // Codex models are listed in the catalogue but are not served by
+    // /v1/chat/completions — they are either deprecated or Responses-API only.
+    // Verified against the live API: gpt-5-codex and gpt-5.1-codex return
+    // "deprecated", gpt-5.3-codex returns "not supported in this endpoint".
+    if (lower.contains('-codex')) return false;
+
+    return true;
   }
 
-  /// Whether [model] accepts an explicit `temperature`.
+  /// Orders model ids so current families surface first.
   ///
-  /// The o-series reasoning models (o1, o3, o4, …) support only their default
-  /// and return a 400 for any explicit value, including 0.
-  static bool _supportsTemperature(String model) {
-    final id = model.toLowerCase();
-    // Match a leading o<digit>, with or without a vendor prefix — proxy
-    // endpoints such as OpenRouter namespace ids ("o3-mini", "openai/o3").
-    return !RegExp(r'(^|/)o\d').hasMatch(id);
+  /// The catalogue is returned roughly alphabetically, which buries `gpt-5`
+  /// and `gpt-4o` under a dozen deprecated `gpt-3.5-turbo-*` variants and
+  /// makes the `/model` picker and tab completion hard to use.
+  static int _modelRank(String id) {
+    final lower = id.toLowerCase();
+    if (lower.startsWith('gpt-5')) return 0;
+    if (lower.startsWith('gpt-4.1') || lower.startsWith('gpt-4.5')) return 1;
+    if (RegExp(r'^o\d').hasMatch(lower)) return 2;
+    if (lower.startsWith('gpt-4o')) return 3;
+    if (lower.startsWith('gpt-4')) return 4;
+    return 5;
   }
+
+  /// Extracts the request parameter that a 400 says is unsupported, if any.
+  ///
+  /// Which parameters a model accepts does not follow family boundaries and
+  /// changes as models ship — verified live, `gpt-5` rejects `temperature`
+  /// while `gpt-5.1` and `gpt-5.2` accept it. Rather than predict from the
+  /// model name (which has been wrong repeatedly), let the API tell us and
+  /// retry once without the offending field.
+  ///
+  /// Recognises the two shapes OpenAI uses:
+  ///   "Unsupported value: 'temperature' does not support 0.0 with this model"
+  ///   "Unsupported parameter: 'max_tokens' is not supported with this model"
+  static String? _unsupportedParameter(int statusCode, String body) {
+    if (statusCode != 400) return null;
+    final match = RegExp(
+      r"Unsupported (?:value|parameter):\s*'([^']+)'",
+      caseSensitive: false,
+    ).firstMatch(body);
+    return match?.group(1);
+  }
+
+  /// Whether the API is asking for `reasoning_effort: "none"` to allow tools.
+  ///
+  /// Some reasoning models refuse function tools while reasoning is active:
+  ///   "Function tools with reasoning_effort are not supported for X in
+  ///    /v1/chat/completions. … or set reasoning_effort to 'none'."
+  /// The message names the remedy, so apply it rather than maintaining a list
+  /// of which models need it.
+  static bool _needsReasoningEffortNone(int statusCode, String body) =>
+      statusCode == 400 &&
+      body.contains('reasoning_effort') &&
+      body.contains('Function tools');
 
   Map<String, String> _headers() => {
     'Content-Type': 'application/json',
@@ -319,11 +410,11 @@ class OpenAIProvider implements LLMProvider {
       'stream': stream,
     };
 
-    // The o-series reasoning models accept only their default temperature and
-    // reject an explicit value with a 400, so the field is omitted for them.
-    if (_supportsTemperature(_model)) {
-      body['temperature'] = request.temperature;
-    }
+    // Sent unconditionally. Support does not follow model families — verified
+    // live, `gpt-5` rejects an explicit temperature while `gpt-5.1` accepts it
+    // — so instead of predicting from the name, complete() retries once
+    // without whichever parameter a 400 names as unsupported.
+    body['temperature'] = request.temperature;
 
     // Without this, streamed responses carry no usage and cost reports as zero.
     if (stream) {

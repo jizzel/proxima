@@ -19,7 +19,13 @@ class FallbackProvider implements LLMProvider {
   String get model => _primary.model;
 
   @override
-  ProviderCapabilities get capabilities => _primary.capabilities;
+  ProviderCapabilities get capabilities => ProviderCapabilities(
+    nativeToolUse: _primary.capabilities.nativeToolUse,
+    streaming: _primary.capabilities.streaming,
+    contextWindow: _primary.capabilities.contextWindow,
+    availableModels: _primary.capabilities.availableModels,
+    hasFallback: true,
+  );
 
   @override
   Future<LLMResponse> complete(CompletionRequest request) async {

@@ -205,7 +205,7 @@ Switch models from inside the REPL:
 | `/deny <tool>` | Block a tool for this session |
 | `/permissions` | Show current session permissions (allowed, denied, ignored) |
 | `/dir <path>` | Switch working directory |
-| `/ignore <pattern>` | Exclude a glob pattern from context |
+| `/ignore <pattern>` | Exclude a glob pattern from file listings and searches |
 | `/snapshot` | Save a session snapshot (resume with `--resume <id>`) |
 | `/exit` | Exit Proxima |
 
@@ -244,6 +244,7 @@ anthropic_api_key: sk-ant-...   # takes precedence over $ANTHROPIC_API_KEY
 openai_api_key: sk-proj-...     # takes precedence over $OPENAI_API_KEY
 openai_base_url: https://api.openai.com/v1   # or any OpenAI-compatible endpoint
 openai_context_window: 32768    # optional; override for custom endpoints
+check_for_updates: true         # check GitHub for a newer release on startup
 ollama_base_url: http://localhost:11434
 plugin_dirs:                   # additional plugin search paths
   - .proxima/plugins
@@ -350,6 +351,44 @@ plugin_dirs:
   - .proxima/plugins          # default
   - /shared/team-plugins      # extra dirs
 ```
+
+---
+
+## Updates
+
+On startup Proxima checks GitHub for a newer release, at most once every 24
+hours, in the background — it never blocks startup and never fails a session if
+the check fails. When one is available:
+
+```
+  ↑ Proxima 1.4.0 is available (you have 1.3.0)
+    [i] install command   [s] skip this version   [l] remind me later   [Enter] continue
+```
+
+**Proxima never installs anything itself.** It has filesystem and shell access,
+so replacing its own binary would make a compromised release channel equivalent
+to remote code execution. `[i]` prints the install command for you to run.
+
+`[s]` records the version and never announces it again; a later release is still
+announced. Set `check_for_updates: false` to disable the check entirely. Source
+builds (`--version` reports `dev`) never check.
+
+---
+
+## Ignored files
+
+File listings and searches skip paths that are not useful to the agent:
+
+1. **Built-in defaults** — `.git`, `node_modules`, `build`, `.dart_tool`,
+   `__pycache__`, `.venv`, `dist`, `target`, and similar, plus generated Dart
+   files (`*.g.dart`, `*.freezed.dart`).
+2. **Your `.gitignore`** — full syntax, including negation (`!keep.log`),
+   anchoring (`/build.sh`), directory-only rules (`cache/`), and `**`.
+3. **Session patterns** — anything added with `/ignore <pattern>`.
+
+This applies to `list_files`, `glob`, `search`, `search_symbol`, and
+`find_references`. Rules are re-read each turn, so editing `.gitignore` takes
+effect immediately.
 
 ---
 

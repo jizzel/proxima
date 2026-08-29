@@ -21,6 +21,7 @@ class ProximaConfig {
   final int? openaiContextWindow;
   final String? ollamaBaseUrl;
   final bool criticOnWrite;
+  final bool checkForUpdates;
   final String? fallbackModel;
   final Map<String, dynamic> raw;
   final List<String> pluginDirs;
@@ -42,6 +43,7 @@ class ProximaConfig {
     this.openaiContextWindow,
     this.ollamaBaseUrl,
     this.criticOnWrite = true,
+    this.checkForUpdates = true,
     this.fallbackModel,
     this.raw = const {},
     this.pluginDirs = const ['.proxima/plugins'],
@@ -133,6 +135,7 @@ class ProximaConfig {
           yaml['openai_context_window'] as int? ?? openaiContextWindow,
       ollamaBaseUrl: yaml['ollama_base_url'] as String? ?? ollamaBaseUrl,
       criticOnWrite: yaml['critic_on_write'] as bool? ?? criticOnWrite,
+      checkForUpdates: yaml['check_for_updates'] as bool? ?? checkForUpdates,
       fallbackModel: yaml['fallback_model'] as String? ?? fallbackModel,
       raw: Map<String, dynamic>.from(yaml.value),
       pluginDirs:
@@ -200,6 +203,7 @@ class ProximaConfig {
     openaiContextWindow: openaiContextWindow ?? this.openaiContextWindow,
     ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
     criticOnWrite: criticOnWrite,
+    checkForUpdates: checkForUpdates,
     fallbackModel: fallbackModel,
     raw: raw,
     pluginDirs: pluginDirs ?? this.pluginDirs,

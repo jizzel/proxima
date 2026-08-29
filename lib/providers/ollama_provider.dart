@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../core/types.dart';
 import 'provider_interface.dart';
+import 'transport.dart';
 
 /// Ollama provider using /api/chat (OpenAI-compatible format).
 /// Also compatible with LM Studio.
@@ -35,10 +36,13 @@ class OllamaProvider implements LLMProvider {
   @override
   Future<LLMResponse> complete(CompletionRequest request) async {
     final body = _buildRequestBody(request, stream: false);
-    final response = await _client.post(
+    final response = await transportPost(
+      _client,
       Uri.parse('$_baseUrl/api/chat'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(body),
+      providerName: name,
+      baseUrl: _baseUrl,
     );
 
     if (response.statusCode != 200) {
@@ -59,7 +63,12 @@ class OllamaProvider implements LLMProvider {
       ..headers['Content-Type'] = 'application/json'
       ..body = jsonEncode(body);
 
-    final response = await _client.send(httpRequest);
+    final response = await transportSend(
+      _client,
+      httpRequest,
+      providerName: name,
+      baseUrl: _baseUrl,
+    );
 
     if (response.statusCode != 200) {
       final errorBody = await response.stream.bytesToString();
@@ -72,7 +81,13 @@ class OllamaProvider implements LLMProvider {
     final buffer = StringBuffer();
     TokenUsage? finalUsage;
 
-    await for (final chunk in response.stream.transform(utf8.decoder)) {
+    final decoded = withStreamTransportErrors(
+      response.stream.transform(utf8.decoder),
+      providerName: name,
+      baseUrl: _baseUrl,
+    );
+
+    await for (final chunk in decoded) {
       buffer.write(chunk);
       final raw = buffer.toString();
       final lines = raw.split('\n');

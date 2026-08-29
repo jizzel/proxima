@@ -3,11 +3,13 @@ import 'dart:io';
 import '../core/config.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
+import '../core/update_checker.dart';
 import '../core/types.dart';
 import '../providers/anthropic_provider.dart';
 import '../providers/ollama_provider.dart';
 import '../providers/openai_provider.dart';
 import '../providers/provider_registry.dart';
+import '../tools/ignore_matcher.dart';
 import '../tools/tool_registry.dart';
 import '../tools/file/delete_file_tool.dart';
 import '../tools/file/read_file_tool.dart';
@@ -76,6 +78,8 @@ class ProximaRepl {
   List<String> _ollamaModels = [];
   List<String> _openaiModels = [];
   List<String> _anthropicModels = [];
+  Future<UpdateInfo?>? _updateCheck;
+  bool _updateNoticeShown = false;
 
   ProximaRepl(this._config);
 
@@ -151,6 +155,7 @@ class ProximaRepl {
     _fetchOllamaModels();
     _fetchOpenaiModels();
     _fetchAnthropicModels();
+    _fetchUpdateInfo();
   }
 
   /// Single source for provider credentials.
@@ -177,6 +182,93 @@ class ProximaRepl {
       'OLLAMA_BASE_URL': _config.ollamaBaseUrl ?? 'http://localhost:11434',
     },
   );
+
+  /// Background version check. Fire-and-forget like the model prefetches: a
+  /// failure must never surface, and startup must never wait on the network.
+  void _fetchUpdateInfo() {
+    if (!_config.checkForUpdates) return;
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
+    if (home.isEmpty) return;
+    // Keep the future rather than only its result: startup must not wait on
+    // the network, but reading a field once immediately after firing the
+    // request would almost always see null and silently drop the notice.
+    _updateCheck = UpdateChecker(
+      currentVersion: proximaVersion,
+      homeDir: home,
+    ).check().catchError((_) => null);
+  }
+
+  /// Shows the update notice, if one arrived, and handles the reply.
+  ///
+  /// Deliberately never installs: Proxima has filesystem and shell access, so
+  /// self-replacing its binary would turn a compromised release channel into
+  /// remote code execution. The user is given the command to run.
+  /// [waitForResult] awaits the in-flight check (bounded), used at the first
+  /// prompt where a brief pause is invisible; elsewhere it peeks without
+  /// blocking. The check is never awaited before the header — startup must not
+  /// wait on the network.
+  Future<void> _maybeShowUpdateNotice({bool waitForResult = false}) async {
+    if (_updateNoticeShown) return;
+    final pending = _updateCheck;
+    if (pending == null) return;
+
+    final UpdateInfo? update;
+    if (waitForResult) {
+      update = await pending.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => null,
+      );
+    } else {
+      // Non-blocking peek: yields null unless the future already completed.
+      update = await Future.any([pending, Future<UpdateInfo?>.value(null)]);
+    }
+    if (update == null) return;
+
+    _updateNoticeShown = true;
+    _updateCheck = null;
+
+    _renderer.print('');
+    _renderer.print(
+      '  ↑ Proxima ${update.latestVersion} is available '
+      '(you have ${update.currentVersion})',
+    );
+    _renderer.printDim(
+      '    [i] install command   [s] skip this version   '
+      '[l] remind me later   [Enter] continue',
+    );
+
+    final answer = (stdin.hasTerminal ? stdin.readLineSync() : '')
+        ?.trim()
+        .toLowerCase();
+
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
+    final checker = UpdateChecker(
+      currentVersion: proximaVersion,
+      homeDir: home,
+    );
+
+    switch (answer) {
+      case 'i':
+        _renderer.print('');
+        _renderer.print('  ${update.installCommand}');
+        _renderer.printDim('    Run this in a shell, then restart proxima.');
+      case 's':
+        await checker.skipVersion(update.latestVersion);
+        _renderer.printDim('    Skipping ${update.latestVersion}.');
+      case 'l':
+        await checker.remindLater();
+        _renderer.printDim('    Will check again next time.');
+      default:
+        break;
+    }
+    _renderer.print('');
+  }
 
   void _fetchOpenaiModels() {
     final apiKey = _config.openaiApiKey;
@@ -242,11 +334,13 @@ class ProximaRepl {
     registry.register(WriteFileTool());
     registry.register(PatchFileTool());
     registry.register(DeleteFileTool());
-    registry.register(ListFilesTool());
-    registry.register(GlobTool());
-    registry.register(SearchTool());
-    registry.register(SearchSymbolTool());
-    registry.register(FindReferencesTool());
+    registry.register(ListFilesTool(matcher: () => registry.ignoreMatcher));
+    registry.register(GlobTool(matcher: () => registry.ignoreMatcher));
+    registry.register(SearchTool(matcher: () => registry.ignoreMatcher));
+    registry.register(SearchSymbolTool(matcher: () => registry.ignoreMatcher));
+    registry.register(
+      FindReferencesTool(matcher: () => registry.ignoreMatcher),
+    );
     registry.register(GetImportsTool());
     registry.register(RunCommandTool());
     registry.register(RunTestsTool());
@@ -277,9 +371,21 @@ class ProximaRepl {
     return registry;
   }
 
+  /// Rebuilds the shared ignore rules for the current turn.
+  ///
+  /// Re-read each turn so an edited `.gitignore`, a `/ignore` pattern, or a
+  /// `/dir` switch takes effect without restarting. Cheap: one small file read.
+  Future<void> _refreshIgnoreMatcher() async {
+    _toolRegistry.ignoreMatcher = await IgnoreMatcher.forDirectory(
+      _config.workingDir,
+      sessionPatterns: _session.permissions.ignoredPatterns,
+    );
+  }
+
   /// Run one-shot --task mode.
   Future<void> runTask(String task) async {
     try {
+      await _refreshIgnoreMatcher();
       _session = await _getAgentLoop().runTurn(_session, task, _renderer);
     } on LLMError catch (e) {
       _renderer.hideSpinner();
@@ -303,7 +409,13 @@ class ProximaRepl {
   Future<void> runRepl() async {
     _printCurrentHeader();
 
+    var firstPrompt = true;
     while (_running) {
+      // Fired in the background at init; surfaced at the first prompt rather
+      // than before the header, so startup is never delayed.
+      await _maybeShowUpdateNotice(waitForResult: firstPrompt);
+      firstPrompt = false;
+
       final input = _readline.readLine(
         prompt: _promptString(),
         statusTip: _modeTip(),
@@ -321,6 +433,11 @@ class ProximaRepl {
 
       final trimmed = input.trim();
       if (trimmed.isEmpty) continue;
+
+      // Refresh before dispatch, not after: `/plan` and `/execute` run agent
+      // turns from inside handle(), so a later refresh would leave them using
+      // the defaults-only matcher.
+      await _refreshIgnoreMatcher();
 
       final wasCommand = await _slashCommands.handle(
         trimmed,

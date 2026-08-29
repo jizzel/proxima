@@ -1,10 +1,18 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
+import '../ignore_matcher.dart';
 import '../tool_interface.dart';
 import '../path_guard.dart';
 
 class SearchTool implements ProximaTool {
+  /// Supplies the current ignore rules; see [ListFilesTool] for why this is a
+  /// callback rather than a value.
+  final IgnoreMatcher Function() _matcher;
+
+  SearchTool({IgnoreMatcher Function()? matcher})
+    : _matcher = matcher ?? IgnoreMatcher.defaults;
+
   @override
   String get name => 'search';
 
@@ -102,13 +110,15 @@ class SearchTool implements ProximaTool {
         results,
       );
     } else if (entity == FileSystemEntityType.directory) {
+      final matcher = _matcher();
       await for (final file in Directory(
         searchPath,
       ).list(recursive: true, followLinks: false)) {
         if (file is! File) continue;
-        if (fileRegex != null) {
-          final rel = p.relative(file.path, from: workingDir);
-          if (!fileRegex.hasMatch(p.basename(rel))) continue;
+        final rel = p.relative(file.path, from: workingDir);
+        if (matcher.isIgnored(rel)) continue;
+        if (fileRegex != null && !fileRegex.hasMatch(p.basename(rel))) {
+          continue;
         }
         await _searchFile(file, regex, workingDir, contextLines, results);
       }

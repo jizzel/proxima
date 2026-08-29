@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../core/types.dart';
 import '../tool_interface.dart';
+import 'run_command_tool.dart';
 import 'test_output_parser.dart';
 
 class RunTestsTool implements ProximaTool {
@@ -41,12 +42,18 @@ class RunTestsTool implements ProximaTool {
 
     final framework = _detectFramework(workingDir);
 
+    Process? process;
     try {
-      final result = await Process.run(
-        'bash',
-        ['-c', command],
+      // Started, not run: a timed-out `Process.run` abandons the Future but
+      // leaves the test runner executing invisibly. See RunCommandTool.
+      process = await Process.start(
+        RunCommandTool.shellExecutable,
+        [...RunCommandTool.shellArgs, command],
         workingDirectory: workingDir,
         runInShell: false,
+      );
+      final result = await RunCommandTool.collect(
+        process,
       ).timeout(const Duration(seconds: 120));
 
       final rawOutput = StringBuffer();
@@ -79,6 +86,9 @@ class RunTestsTool implements ProximaTool {
 
       return output.toString().trim();
     } on TimeoutException {
+      if (process != null) {
+        await RunCommandTool.killProcessTree(process);
+      }
       throw ToolError(
         name,
         'Tests timed out after 120s',

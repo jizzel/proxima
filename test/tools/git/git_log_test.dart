@@ -67,8 +67,8 @@ void main() {
   });
 
   test('throws ToolError for path traversal', () async {
-    expect(
-      () => tool.execute({'path': '../escape.txt'}, tempDir.path),
+    await expectLater(
+      tool.execute({'path': '../escape.txt'}, tempDir.path),
       throwsA(isA<ToolError>()),
     );
   });

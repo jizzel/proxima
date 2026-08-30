@@ -19,6 +19,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **CI pinned to Dart 3.11.1** — both workflows used `sdk: stable`, so a formatter change between SDK releases failed `dart format --set-exit-if-changed` on all three platforms for code that formatted cleanly against the SDK named in `pubspec.yaml`. The pin makes formatting reproducible locally; raise it and the pubspec constraint together
 - **Spinning detection interrupted legitimate exploration** — `isSpinning` fired on any six consecutive read-only calls without checking whether they targeted the same thing, so reading six *different* files on a small project was indistinguishable from looping. Observed twice in one session on a six-file project, blocking the task both times. It now also requires the window to be repetitive (fewer than four distinct call fingerprints). Three existing tests had encoded the wrong behaviour and were corrected
 - **`/files` ignored reads** — it matched only `write_file`/`patch_file`/`delete_file`, so it reported "No files accessed this session" after reading a file, while documented as "files read or written"
 - **The write critic could not see the file path** — it received only the tool name and content, so it reported changes as "lacking a file path" while the confirmation panel displayed that path directly above

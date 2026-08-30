@@ -118,6 +118,12 @@ parsing would be sent to the model instead.
 
 Before a feature is considered complete, verify against the MVP checklist in `SPECS.md` Section 18. All items must pass end-to-end.
 
+**SDK version is pinned in CI** (`ci.yml`, `release.yml`) to match
+`pubspec.yaml`'s `^3.11.1`. `dart format` output changes between SDK releases,
+so an unpinned `sdk: stable` fails `--set-exit-if-changed` on code that formats
+cleanly locally. Raise the pin and the pubspec constraint together, and reformat
+in the same change.
+
 ## Dart Package Dependencies
 
 Key packages from `SPECS.md` Section 17:

@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.6.0] — 2026-08-30
+
 ### Added
 
 - **Official plugin distribution** (SPECS §21.1) — `proxima plugin list | install <name> | remove <name> | update`, and `/plugin` in the REPL. Plugins install from a published catalogue into `~/.proxima/plugins/`, making them available in every project. `plugin` is intercepted before flag parsing, because the main parser treats the first positional as a natural-language task — without that, `proxima plugin install x` was silently sent to the model as a prompt
@@ -353,7 +357,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/jizzel/proxima/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/jizzel/proxima/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jizzel/proxima/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jizzel/proxima/compare/v1.2.0...v1.3.0

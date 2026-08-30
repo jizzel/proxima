@@ -330,6 +330,60 @@ void main() {
       }
     });
   });
+  group('auth-scheme words in ordinary prose', () {
+    test('does not mask a task description containing a scheme word', () async {
+      // Regression: the bare-scheme rule required only 8+ non-space characters,
+      // so "implement basic authentication middleware" became
+      // "implement *** middleware" — destroying the task on --resume.
+      for (final prose in [
+        'implement basic authentication middleware',
+        'refactor the basic configuration loader',
+        'switch from basic to digest authentication',
+        'add bearer token validation to the API',
+        'use basic auth for the staging environment',
+        'write a basic implementation first',
+        'the digest algorithm needs documenting',
+        'Basic authentication should be replaced',
+        'Digest authentication is also supported',
+      ]) {
+        expect(maskSecretsInString(prose), equals(prose), reason: prose);
+      }
+    });
+
+    test('still masks a bare scheme carrying a real credential', () {
+      // The credential must *look* like one: a digit, base64/URL punctuation,
+      // or mid-token case mixing. English words have none of those.
+      for (final secret in [
+        '-H "Bearer rawtokenvalue123"',
+        '-H "BEARER RAWTOKEN12345"',
+        '-H "bearer abc123def456"',
+        'Digest xyz789abc123def',
+        'APIKey abc123def456gh',
+      ]) {
+        expect(
+          maskSecretsInString(secret),
+          isNot(equals(secret)),
+          reason: secret,
+        );
+      }
+    });
+
+    test('masks a letters-only base64 credential', () {
+      // `Basic dXNlcjpwYXNz` carries no digit at all — only mid-token case
+      // mixing distinguishes it from prose.
+      for (final secret in [
+        'Basic dXNlcjpwYXNz',
+        'Basic YWxhZGRpbjpvcGVuc2VzYW1l',
+      ]) {
+        expect(
+          maskSecretsInString(secret),
+          isNot(equals(secret)),
+          reason: secret,
+        );
+      }
+    });
+  });
+
   group('ToolCall serialisation', () {
     test('masks args and reasoning at the serialisation boundary', () {
       // Not currently reached by session persistence, but leaving one

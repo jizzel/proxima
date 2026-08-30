@@ -110,16 +110,29 @@ The prompt tag reflects the current REPL mode:
 
 | Key | Action |
 |---|---|
-| `↑` / `↓` | Scroll history / navigate suggestion panel |
-| `Tab` | Accept top suggestion |
+| `↑` / `↓` | Scroll input history |
+| `Tab` | Accept the inline completion; press again to cycle |
 | `Shift+Tab` | Cycle REPL mode: normal → plan → accept-edits → normal |
-| `Enter` | Submit input or accept highlighted suggestion |
-| `Escape` | Dismiss suggestion panel |
+| `Enter` | Submit input |
+| `Escape` | Dismiss the inline completion |
 | `Ctrl+C` | Cancel input |
 | `Ctrl+A` / `Ctrl+E` | Jump to line start / end |
 | `Ctrl+U` / `Ctrl+K` | Delete to line start / end |
 | `Ctrl+B` / `Ctrl+F` | Move cursor left / right |
 | `Alt+←` / `Alt+→` | Word-left / word-right |
+
+**Completion is inline, never a panel below the prompt.** The candidate's
+untyped remainder is drawn as dim text after the cursor, on the prompt's own
+line, with a `(2/6 · tab)` counter when several match.
+
+An earlier design drew a separator and suggestion rows *beneath* the prompt with
+real newlines, restoring the cursor afterwards with `\x1b[s` / `\x1b[u`. Near the
+bottom of the terminal those newlines scroll the screen, and a cursor restore
+cannot undo a scroll — so the saved position was stale and every repaint left
+another separator and row in the scrollback, one per keystroke. Writing only to
+the current line removes that failure mode by construction rather than managing
+it, and it is why `Enter` no longer accepts a suggestion (there is no list to
+highlight) and the arrow keys mean history again.
 
 ### 3.2.2 REPL Mode Cycle (Shift+Tab)
 

@@ -276,7 +276,9 @@ class SlashCommandHandler {
     stdout.writeln(
       dim('  Select model  ↑/↓ navigate · Enter confirm · Esc cancel'),
     );
-    _renderModelList(
+    // Tracks what is physically on screen, so a mid-picker terminal resize
+    // cannot desync the cursor arithmetic from the drawn rows.
+    var drawnRows = _renderModelList(
       console,
       models,
       selected,
@@ -292,22 +294,34 @@ class SlashCommandHandler {
           case ControlCharacter.arrowUp:
             if (selected > 0) {
               selected--;
-              _renderModelList(console, models, selected, currentModel);
+              drawnRows = _renderModelList(
+                console,
+                models,
+                selected,
+                currentModel,
+                previousRows: drawnRows,
+              );
             }
           case ControlCharacter.arrowDown:
             if (selected < models.length - 1) {
               selected++;
-              _renderModelList(console, models, selected, currentModel);
+              drawnRows = _renderModelList(
+                console,
+                models,
+                selected,
+                currentModel,
+                previousRows: drawnRows,
+              );
             }
           case ControlCharacter.enter:
-            // Clear exactly what was drawn: the visible window, the hint line,
-            // and the header. Using the full list length erased unrelated
-            // scrollback once the list no longer fit on screen.
-            _clearModelList(console, _pickerWindow(console, models.length) + 2);
+            // Clear exactly what was drawn: the rows on screen, the hint line,
+            // and the header. Recomputing the window here read the *current*
+            // terminal height, which is wrong after a resize.
+            _clearModelList(console, drawnRows + 2);
             return models[selected];
           case ControlCharacter.escape:
           case ControlCharacter.ctrlC:
-            _clearModelList(console, _pickerWindow(console, models.length) + 2);
+            _clearModelList(console, drawnRows + 2);
             return null;
           default:
             break;
@@ -355,11 +369,19 @@ class SlashCommandHandler {
   /// Exposed for the regression test that pins the fallback threshold.
   static int get minPickerHeight => _minPickerHeight;
 
-  void _renderModelList(
+  /// Draws the visible window and returns how many list rows it drew.
+  ///
+  /// [previousRows] is what the last draw actually put on screen. The cursor
+  /// must move by that, not by a freshly computed window: if the terminal is
+  /// resized while the picker is open the two disagree, and the redraw either
+  /// moves above the old list (growing) or leaves stale rows behind
+  /// (shrinking) — the same desync that caused the original corruption.
+  int _renderModelList(
     Console console,
     List<String> models,
     int selected,
     String current, {
+    int previousRows = 0,
     bool firstRender = false,
   }) {
     final window = _pickerWindow(console, models.length);
@@ -371,11 +393,9 @@ class SlashCommandHandler {
     if (start < 0) start = 0;
     final end = (start + window).clamp(0, models.length);
 
-    // One extra line for the "n more" hint, so the cursor arithmetic matches
-    // exactly what was drawn.
-    final drawn = (end - start) + 1;
-    if (!firstRender) {
-      stdout.write('\x1b[${drawn}A');
+    // Move up by what the *previous* draw left on screen, plus its hint line.
+    if (!firstRender && previousRows > 0) {
+      stdout.write('\x1b[${previousRows + 1}A');
     }
 
     for (int i = start; i < end; i++) {
@@ -398,6 +418,7 @@ class SlashCommandHandler {
         ? '  … $hidden more · ${selected + 1}/${models.length}'
         : '  ${selected + 1}/${models.length}';
     stdout.write('\r\x1b[K${dim(hint)}\n');
+    return end - start;
   }
 
   /// Moves the cursor up [lineCount] lines and erases each line.

@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.7.0] — 2026-08-30
+
 ### Fixed
 
 - **The `/model` picker corrupted the terminal** — it redrew by moving the cursor up by the *full* list length, so once that exceeded the terminal height the cursor could not reach the top and every arrow keypress appended another copy of the list. With ~90 models the picker filled the scrollback with dozens of duplicates. It now renders a scrolling window sized to the terminal, with a `… n more · i/total` position hint, and clears exactly what it drew
@@ -386,7 +390,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/jizzel/proxima/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/jizzel/proxima/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/jizzel/proxima/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/jizzel/proxima/compare/v1.4.0...v1.5.0

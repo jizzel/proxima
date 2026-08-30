@@ -9,9 +9,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
+---
 
-- **`gpt-5.6-*` models printed a debug warning on every turn** — the unsupported-parameter retry lived only on the non-streaming path, so a model needing `reasoning_effort: none` failed the stream, printed `⚠ [debug] Streaming failed, falling back`, and recovered silently via `complete()`. Functionally correct but it read as a broken session. The streaming path now performs the same retry in place
+## [1.5.0] — 2026-08-30
 
 ### Added
 
@@ -20,6 +20,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
   Cost is bounded and opt-out: the call fires **only** when messages would otherwise be dropped, so an under-budget turn spends nothing. `max_tokens` is capped at 512, no tools are sent, and the transcript is bounded both per-message (2000 chars) and in total (24000 chars, newest kept). Room for the summary is reserved *before* truncation so the injected summary cannot push retained history back over its budget — and only when truncation is actually needed, so a history that already fits is never truncated or summarized. Summaries are cached per span (the agent loop rebuilds context each iteration, so an uncached 10-iteration turn paid for 10 near-identical summaries), their token usage is recorded against the session, the transcript carries secret-masked `toolInput` so files read can be named, and relevance filtering runs before injection so the summary cannot be filtered out. Disable with `summarize_on_compact: false`.
 
   Every failure mode degrades to the plain truncation already applied — no provider, a provider error, a non-final response, a blank summary, or a throwing summarizer. A summarization failure costs context, never the turn. `Compaction.compact()` is now `async` and takes an optional `HistorySummarizer`; with none supplied its behaviour is unchanged. 14 new tests
+
+### Fixed
+
+- **`gpt-5.6-*` models printed a debug warning on every turn** — the unsupported-parameter retry lived only on the non-streaming path, so a model needing `reasoning_effort: none` failed the stream, printed `⚠ [debug] Streaming failed, falling back`, and recovered silently via `complete()`. Functionally correct but it read as a broken session. The streaming path now performs the same retry in place
 
 ---
 
@@ -330,7 +334,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/jizzel/proxima/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jizzel/proxima/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jizzel/proxima/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/jizzel/proxima/compare/v1.1.0...v1.2.0

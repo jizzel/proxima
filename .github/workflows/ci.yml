@@ -31,5 +31,8 @@ jobs:
       - name: Analyze
         run: dart analyze --fatal-infos
 
+      - name: Validate plugin descriptors
+        run: python3 scripts/build_catalog.py --validate-only
+
       - name: Run tests
         run: dart test

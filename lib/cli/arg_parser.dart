@@ -46,6 +46,7 @@ ArgParser buildArgParser() {
 
 void printUsage(ArgParser parser) {
   print('Usage: proxima [options] [task]');
+  print('       proxima plugin <command>');
   print('');
   print('A terminal-native, model-agnostic coding agent.');
   print('');

@@ -46,10 +46,7 @@ class OllamaProvider implements LLMProvider {
     );
 
     if (response.statusCode != 200) {
-      throw LLMError(
-        LLMErrorKind.unknown,
-        'Ollama HTTP ${response.statusCode}: ${response.body}',
-      );
+      throw _parseError(response.statusCode, response.body);
     }
 
     final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -72,10 +69,7 @@ class OllamaProvider implements LLMProvider {
 
     if (response.statusCode != 200) {
       final errorBody = await response.stream.bytesToString();
-      throw LLMError(
-        LLMErrorKind.unknown,
-        'Ollama HTTP ${response.statusCode}: $errorBody',
-      );
+      throw _parseError(response.statusCode, errorBody);
     }
 
     final buffer = StringBuffer();
@@ -141,6 +135,17 @@ class OllamaProvider implements LLMProvider {
       return [];
     }
   }
+
+  /// Classifies a non-200 so callers can act on it.
+  ///
+  /// A local Ollama rarely rate-limits, but the same endpoint shape is served
+  /// by LM Studio and by remote/proxied Ollama instances that do — reporting
+  /// everything as `unknown` left the retry logic with nothing to act on.
+  LLMError _parseError(int statusCode, String body) => switch (statusCode) {
+    401 || 403 => LLMError(LLMErrorKind.auth, 'Ollama HTTP $statusCode: $body'),
+    429 => LLMError(LLMErrorKind.rateLimit, 'Ollama HTTP $statusCode: $body'),
+    _ => LLMError(LLMErrorKind.unknown, 'Ollama HTTP $statusCode: $body'),
+  };
 
   Map<String, dynamic> _buildRequestBody(
     CompletionRequest request, {

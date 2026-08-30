@@ -83,20 +83,14 @@ class OpenAIProvider implements LLMProvider {
   Future<LLMResponse> complete(CompletionRequest request) async {
     final body = _buildRequestBody(request, stream: false);
 
-    final http.Response response;
-    try {
-      response = await _client.post(
-        Uri.parse('$_baseUrl/chat/completions'),
-        headers: _headers(),
-        body: jsonEncode(body),
-      );
-    } on Exception catch (e) {
-      // A transport failure (DNS, refused connection, TLS, timeout) surfaces
-      // as ClientException/SocketException, not an HTTP response. It must
-      // become an LLMError or FallbackProvider — which only catches LLMError —
-      // will not try the secondary during the outage it exists to cover.
-      throw LLMError(LLMErrorKind.network, 'Request to $_baseUrl failed: $e');
-    }
+    final response = await transportPost(
+      _client,
+      Uri.parse('$_baseUrl/chat/completions'),
+      headers: _headers(),
+      body: jsonEncode(body),
+      providerName: name,
+      baseUrl: _baseUrl,
+    );
 
     if (response.statusCode != 200) {
       // The API names the parameter it will not accept; drop it and retry once
@@ -131,12 +125,12 @@ class OpenAIProvider implements LLMProvider {
           ..headers.addAll(_headers())
           ..body = jsonEncode(body);
 
-    http.StreamedResponse response;
-    try {
-      response = await _client.send(httpRequest);
-    } on Exception catch (e) {
-      throw LLMError(LLMErrorKind.network, 'Request to $_baseUrl failed: $e');
-    }
+    var response = await transportSend(
+      _client,
+      httpRequest,
+      providerName: name,
+      baseUrl: _baseUrl,
+    );
 
     if (response.statusCode != 200) {
       final errorBody = await response.stream.bytesToString();
@@ -151,7 +145,12 @@ class OpenAIProvider implements LLMProvider {
           http.Request('POST', Uri.parse('$_baseUrl/chat/completions'))
             ..headers.addAll(_headers())
             ..body = jsonEncode(retryBody);
-      response = await _client.send(retryRequest);
+      response = await transportSend(
+        _client,
+        retryRequest,
+        providerName: name,
+        baseUrl: _baseUrl,
+      );
       if (response.statusCode != 200) {
         throw _parseError(
           response.statusCode,

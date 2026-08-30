@@ -9,6 +9,24 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Official plugin distribution** (SPECS §21.1) — `proxima plugin list | install <name> | remove <name> | update`, and `/plugin` in the REPL. Plugins install from a published catalogue into `~/.proxima/plugins/`, making them available in every project. `plugin` is intercepted before flag parsing, because the main parser treats the first positional as a natural-language task — without that, `proxima plugin install x` was silently sent to the model as a prompt
+- **Install safety** — SHA-256 verified against the catalogue before anything reaches disk, HTTPS-only downloads, and **zip-slip rejected**: any archive entry resolving outside the plugin directory aborts the install, with validation and extraction sharing one separator-normalised path so Windows-style `..\..\x` entries cannot slip past a POSIX check. Plugin names must be a single path component, so `plugin remove ../../Documents` is refused rather than deleting an arbitrary directory. An update moves the existing install aside and restores it if the staged rename fails, so a transient error cannot uninstall a working plugin. Execute permissions are restored from the descriptor's declared `executable` — matching only `*.sh` left an extensionless entry point unrunnable. Zip-slip and the name/permission handling are not in SPECS §21.1 — a checksum proves the archive matches the catalogue, not that its contents are safe
+- **`~` expansion in plugin directories** (`PluginLoader.resolvePluginDir`) — config values come from YAML and never pass through a shell, so `~/.proxima/plugins` previously resolved to `<workingDir>/~/.proxima/plugins`
+- **`scripts/build_catalog.py`** — packages each `plugins/<name>/` into `plugin-<name>.zip`, computes checksums, and writes `catalog.json`; wired into `release.yml`, with a descriptor-validation step added to `ci.yml`
+- **Provider and tool test coverage** — `AnthropicProvider` (33) and `OllamaProvider` (25) had no HTTP-level tests at all despite Anthropic being the default provider, and `transport.dart` had none despite existing to prevent a specific bug class. Plus `run_tests` (23), `write_plan` (10), `delegate` (7), the plugin installer (22), and the plugin CLI (15)
+
+### Fixed
+
+- **Spinning detection interrupted legitimate exploration** — `isSpinning` fired on any six consecutive read-only calls without checking whether they targeted the same thing, so reading six *different* files on a small project was indistinguishable from looping. Observed twice in one session on a six-file project, blocking the task both times. It now also requires the window to be repetitive (fewer than four distinct call fingerprints). Three existing tests had encoded the wrong behaviour and were corrected
+- **`/files` ignored reads** — it matched only `write_file`/`patch_file`/`delete_file`, so it reported "No files accessed this session" after reading a file, while documented as "files read or written"
+- **The write critic could not see the file path** — it received only the tool name and content, so it reported changes as "lacking a file path" while the confirmation panel displayed that path directly above
+- **`--resume <missing-id>` failed silently** — an unknown session id started a blank session with no message, so a typo looked like a successful resume with lost history
+- **OpenAI bypassed its own transport helper** — a previous change replaced `transportPost`/`transportSend` with raw client calls, and the streaming retry had no error guard at all, so a transport failure there escaped as a raw `ClientException`. This is the exact bug class `transport.dart` exists to prevent
+- **Inconsistent error classification across providers** — Anthropic mapped 403 to `unknown` rather than `auth`, so a revoked key triggered a pointless fallback to a secondary that would also fail (`FallbackProvider` treats `auth` as non-retryable). Ollama mapped *everything* to `unknown`, leaving retry logic nothing to act on for a rate-limited remote instance. All three providers now classify identically
+- **`write_plan` threw a raw `TypeError`** on a missing or non-string `content`, escaping the `ToolError` taxonomy the agent loop uses to classify failures
+
 ---
 
 ## [1.5.0] — 2026-08-30

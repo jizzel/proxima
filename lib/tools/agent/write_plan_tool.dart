@@ -33,7 +33,16 @@ class WritePlanTool implements ProximaTool {
 
   @override
   Future<String> execute(Map<String, dynamic> args, String workingDir) async {
-    final content = args['content'] as String;
+    // Guarded, not cast: a raw TypeError escapes the ToolError taxonomy the
+    // agent loop uses to classify and report failures.
+    final content = args['content'];
+    if (content is! String) {
+      throw ToolError(
+        name,
+        'write_plan requires a "content" string.',
+        errorCode: ToolErrorCode.parseError,
+      );
+    }
     final planDir = p.join(workingDir, '.proxima');
     final planPath = p.join(planDir, 'plan.md');
 

@@ -247,4 +247,39 @@ void main() {
       expect(provider.lastRequest, isNull);
     });
   });
+  group('SubagentRunner.runCritic', () {
+    test('tells the critic which file is being changed', () async {
+      // Regression: the critic received content with no target and reported
+      // changes as "lacking a file path" while the confirm panel showed one.
+      final provider = StubProvider(
+        FinalResponse('{"verdict":"approve","issues":[],"summary":"ok"}'),
+      );
+
+      await SubagentRunner(provider: provider).runCritic(
+        tool: 'write_file',
+        path: 'lib/main.dart',
+        diffOrContent: 'void main() {}',
+        model: 'm',
+      );
+
+      final sent = provider.lastRequest!.messages.single.content;
+      expect(sent, contains('lib/main.dart'));
+      expect(sent, contains('write_file'));
+    });
+
+    test('omits the File line when no path is available', () async {
+      final provider = StubProvider(
+        FinalResponse('{"verdict":"approve","issues":[],"summary":"ok"}'),
+      );
+
+      await SubagentRunner(
+        provider: provider,
+      ).runCritic(tool: 'write_file', diffOrContent: 'x', model: 'm');
+
+      expect(
+        provider.lastRequest!.messages.single.content,
+        isNot(contains('File:')),
+      );
+    });
+  });
 }

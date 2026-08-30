@@ -1743,7 +1743,7 @@ Throws `ToolError(notFound)` when file does not exist; `ToolError(parseError)` f
 
 ## 21. V1.3 Horizon
 
-### 21.1 Official Plugin Distribution
+### 21.1 Official Plugin Distribution ✅ Shipped
 
 The goal is a single command that installs any official or community plugin into a user-global directory, with no manual file copying.
 
@@ -1768,13 +1768,14 @@ After install, the plugin is immediately available in the current and all future
 
 **1. User-global plugin directory**
 
-Add `~/.proxima/plugins/` as a second default entry in `ProximaConfig.pluginDirs`:
+`~/.proxima/plugins/` is a second default entry in `ProximaConfig.pluginDirs`.
+Plugins installed globally live here and are visible in every project.
 
-```dart
-pluginDirs: const ['.proxima/plugins', '~/.proxima/plugins'],
-```
-
-This is a one-line change. Plugins installed globally live here and are visible in every project automatically.
+Not the one-line change originally assumed: `PluginLoader` resolved relative
+paths with `p.join(workingDir, dir)` and did no `~` expansion, so the literal
+string would have resolved to `<workingDir>/~/.proxima/plugins`. Expansion is
+handled by `PluginLoader.resolvePluginDir`, and **both** config defaults needed
+updating.
 
 **2. Official plugin catalogue (`catalog.json`)**
 
@@ -1876,6 +1877,20 @@ The release workflow addition is roughly:
 #### Security
 
 - Checksum verification is mandatory — no install proceeds without a match
+- **Zip-slip is rejected**: every archive entry must resolve inside the target
+  directory before extraction, or the install aborts having written nothing.
+  Not in the original spec — a checksum proves the archive matches the
+  catalogue, not that its contents are safe, so a compromised or malicious
+  plugin could otherwise carry `../` entries and write anywhere the user can.
+  Validation and extraction share one separator-normalised path: checking the
+  raw entry name let `..\..\x` through on POSIX, where `path` treats a
+  backslash as an ordinary character
+- **Plugin names must be a single path component**: `plugin remove
+  ../../Documents` otherwise resolved outside the install root and deleted it
+- **An update never uninstalls on failure**: the existing plugin is moved aside
+  and restored if the staged rename fails, rather than deleted up front
+- Downloads are staged in a sibling temp directory and swapped into place, so a
+  failure part-way through cannot leave a half-installed plugin
 - Downloaded zips are extracted into a sandboxed temp directory first; only moved to `~/.proxima/plugins/` after verification
 - The stable catalogue URL is HTTPS only; no plain-HTTP fallback
 - `plugin remove` deletes the entire plugin directory; no residual files

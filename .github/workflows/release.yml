@@ -82,6 +82,14 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Package official plugins and generate catalog
+        run: |
+          python3 scripts/build_catalog.py \
+            --plugins-dir plugins/ \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output dist/catalog.json \
+            --zip-dir dist/
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -89,7 +97,7 @@ jobs:
 
       - name: Stage release assets
         run: |
-          mkdir dist
+          mkdir -p dist   # the catalog step may have created it already
           mv artifacts/proxima-macos-arm64/proxima      dist/proxima-macos-arm64
           mv artifacts/proxima-linux-x64/proxima        dist/proxima-linux-x64
           mv artifacts/proxima-windows-x64.exe/proxima.exe dist/proxima-windows-x64.exe
@@ -134,5 +142,7 @@ jobs:
             dist/proxima-macos-arm64
             dist/proxima-linux-x64
             dist/proxima-windows-x64.exe
+            dist/catalog.json
+            dist/plugin-*.zip
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

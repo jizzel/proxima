@@ -131,6 +131,7 @@ class SubagentRunner {
     required String tool,
     required String diffOrContent,
     required String model,
+    String? path,
     int maxTokens = 1024,
   }) async {
     final request = CompletionRequest(
@@ -139,7 +140,9 @@ class SubagentRunner {
       messages: [
         Message(
           role: MessageRole.user,
-          content: 'Tool: $tool\n\nProposed change:\n$diffOrContent',
+          content: path == null
+              ? 'Tool: $tool\n\nProposed change:\n$diffOrContent'
+              : 'Tool: $tool\nFile: $path\n\nProposed change:\n$diffOrContent',
         ),
       ],
       tools: const [],

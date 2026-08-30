@@ -1,11 +1,19 @@
 import 'dart:io';
 import 'package:args/args.dart';
 import 'package:proxima/cli/arg_parser.dart';
+import 'package:proxima/cli/plugin_command.dart';
 import 'package:proxima/cli/repl.dart';
 import 'package:proxima/core/config.dart';
 import 'package:proxima/core/types.dart';
 
 Future<void> main(List<String> arguments) async {
+  // `plugin` is intercepted before flag parsing: the main parser treats the
+  // first positional as a natural-language task, so without this
+  // `proxima plugin install x` would be sent to the model as a prompt.
+  if (arguments.isNotEmpty && arguments.first == 'plugin') {
+    exit(await runPluginCommand(arguments.skip(1).toList()));
+  }
+
   final argParser = buildArgParser();
 
   ArgResults results;

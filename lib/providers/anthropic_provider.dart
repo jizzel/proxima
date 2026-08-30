@@ -290,7 +290,10 @@ class AnthropicProvider implements LLMProvider {
       final error = json['error'] as Map<String, dynamic>?;
       final message = error?['message'] as String? ?? body;
       return switch (statusCode) {
-        401 => LLMError(LLMErrorKind.auth, message),
+        // 403 is auth, not unknown: FallbackProvider treats auth as
+        // non-retryable, so classifying a revoked key as unknown sent the
+        // request to a secondary that could not help either.
+        401 || 403 => LLMError(LLMErrorKind.auth, message),
         429 => LLMError(LLMErrorKind.rateLimit, message),
         _ => LLMError(LLMErrorKind.unknown, 'HTTP $statusCode: $message'),
       };

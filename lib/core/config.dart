@@ -48,7 +48,7 @@ class ProximaConfig {
     this.summarizeOnCompact = true,
     this.fallbackModel,
     this.raw = const {},
-    this.pluginDirs = const ['.proxima/plugins'],
+    this.pluginDirs = const ['.proxima/plugins', '~/.proxima/plugins'],
   });
 
   static ProximaConfig defaults() => ProximaConfig(
@@ -69,7 +69,7 @@ class ProximaConfig {
         Platform.environment['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1',
     ollamaBaseUrl:
         Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
-    pluginDirs: const ['.proxima/plugins'],
+    pluginDirs: const ['.proxima/plugins', '~/.proxima/plugins'],
   );
 
   /// Load config: start with defaults, merge user config, then project config.

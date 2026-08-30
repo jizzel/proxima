@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The REPL crashed at startup when the terminal size was unavailable** — `stdout.terminalColumns` throws a `StdoutException` rather than returning a default whenever the size cannot be read (output piped to a file, some CI runners, a PTY opened without a window size). Three unguarded call sites — the REPL header and two in the renderer — turned that into an unhandled exception before the first prompt, a hard crash over a cosmetic detail. All three now go through guarded `terminalWidth()` / `terminalHeight()` helpers that fall back to 80×24
+
 ---
 
 ## [1.7.0] — 2026-08-30

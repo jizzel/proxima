@@ -155,9 +155,13 @@ class Compaction {
     var result = deduplicateFileReads(messages, fileCache);
     result = pruneToolResults(result, budget.toolResults ~/ 4);
 
-    // Reserve room for the summary before truncating, so prepending it cannot
-    // push the retained history back over the budget it was just trimmed to.
-    final reserve = summarizer == null ? 0 : summaryReserveTokens;
+    // Decide against the *real* budget first. Reserving unconditionally would
+    // discard messages — and pay for a summary — for histories that already
+    // fit, and would retain less than plain truncation if the summary failed.
+    final fitsAsIs =
+        result.fold(0, (sum, m) => sum + estimateTokens(m.content)) <=
+        budget.conversationHistory;
+    final reserve = (summarizer == null || fitsAsIs) ? 0 : summaryReserveTokens;
 
     final dropped = <Message>[];
     result = truncateHistory(
@@ -186,7 +190,11 @@ class Compaction {
         final clipped = summary.length > maxChars
             ? '${summary.substring(0, maxChars)}…'
             : summary;
-        result = [
+        // Filter *before* prepending: the summary stands in for messages that
+        // are already gone, so it must not compete with retained ones for a
+        // slot in the top-N.
+        result = relevanceFilter(result, query, 100);
+        return [
           Message(role: MessageRole.user, content: '$prefix$clipped'),
           ...result,
         ];

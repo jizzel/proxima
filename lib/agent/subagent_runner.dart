@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/secret_masker.dart';
 import '../core/types.dart';
 import '../providers/provider_interface.dart';
 
@@ -65,6 +66,14 @@ class SubagentResult {
     required this.isError,
     this.errorMessage,
   });
+}
+
+/// A summary plus the tokens its generation cost.
+class SummaryResult {
+  final String text;
+  final TokenUsage usage;
+
+  const SummaryResult({required this.text, required this.usage});
 }
 
 class SubagentRunner {
@@ -154,7 +163,7 @@ class SubagentRunner {
   /// Returns null on any failure — an empty response, a provider error, a
   /// blank summary. The caller then falls back to plain truncation, so a
   /// summarisation failure costs context but never the turn.
-  Future<String?> runSummarizer({
+  Future<SummaryResult?> runSummarizer({
     required List<Message> messages,
     required String model,
     int maxTokens = 512,
@@ -186,9 +195,22 @@ class SubagentRunner {
             MessageRole.system => 'System',
           };
           // Cap each message so one huge tool result cannot crowd out the rest.
-          final body = m.content.length > 2000
+          var body = m.content.length > 2000
               ? '${m.content.substring(0, 2000)}…'
               : m.content;
+
+          // An assistant tool call keeps its arguments in toolInput and often
+          // has empty content, and a read_file *result* is numbered file text
+          // with no path in it — so without this the summariser cannot name
+          // the files that were read, which is the main thing it should
+          // preserve. Masked, since these reach an external provider.
+          if (m.toolInput != null && m.toolInput!.isNotEmpty) {
+            final args = jsonEncode(maskSecrets(m.toolInput!));
+            final shown = args.length > 300
+                ? '${args.substring(0, 300)}…'
+                : args;
+            body = body.isEmpty ? shown : '$body $shown';
+          }
           return '$who: $body';
         })
         .join('\n\n');
@@ -208,7 +230,10 @@ class SubagentRunner {
       final body = response.body;
       if (body is! FinalResponse) return null;
       final text = body.text.trim();
-      return text.isEmpty ? null : text;
+      if (text.isEmpty) return null;
+      // Usage is returned so the caller can record it: a summarisation request
+      // costs real tokens, and omitting it under-reports the session total.
+      return SummaryResult(text: text, usage: response.usage);
     } catch (_) {
       return null;
     }

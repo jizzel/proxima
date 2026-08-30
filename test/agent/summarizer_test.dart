@@ -26,7 +26,14 @@ class StubProvider implements LLMProvider {
   Future<LLMResponse> complete(CompletionRequest request) async {
     lastRequest = request;
     if (throws) throw LLMError(LLMErrorKind.network, 'boom');
-    return LLMResponse(body: _body, usage: TokenUsage.zero);
+    return LLMResponse(
+      body: _body,
+      usage: const TokenUsage(
+        inputTokens: 120,
+        outputTokens: 30,
+        totalTokens: 150,
+      ),
+    );
   }
 
   @override
@@ -63,8 +70,9 @@ void main() {
         provider: provider,
       ).runSummarizer(messages: sampleHistory(), model: 'm');
 
-      expect(summary, contains('lib/client.dart'));
-      expect(summary, contains('retry'));
+      expect(summary!.text, contains('lib/client.dart'));
+      expect(summary.text, contains('retry'));
+      expect(summary.usage, isNotNull, reason: 'usage must be reported');
     });
 
     test('sends no tools and a bounded max_tokens', () async {
@@ -154,6 +162,53 @@ void main() {
         maxTranscriptChars: 10,
       );
       expect(provider.lastRequest, isNotNull);
+    });
+
+    test('reports the tokens the summary cost', () async {
+      // Regression: usage was discarded, so every summarisation request was
+      // missing from the session's token and cost totals.
+      final summary = await SubagentRunner(
+        provider: StubProvider(FinalResponse('- x')),
+      ).runSummarizer(messages: sampleHistory(), model: 'm');
+
+      expect(summary!.usage.totalTokens, equals(150));
+    });
+
+    test('includes tool arguments so files can be named', () async {
+      // Regression: an assistant tool-call message keeps its path in toolInput
+      // and often has empty content, and a read_file *result* is numbered file
+      // text with no path — so the transcript could not identify files read.
+      final provider = StubProvider(FinalResponse('- x'));
+      await SubagentRunner(
+        provider: provider,
+      ).runSummarizer(messages: sampleHistory(), model: 'm');
+
+      expect(
+        provider.lastRequest!.messages.single.content,
+        contains('lib/client.dart'),
+      );
+    });
+
+    test('masks secrets in tool arguments', () async {
+      final provider = StubProvider(FinalResponse('- x'));
+      await SubagentRunner(provider: provider).runSummarizer(
+        messages: [
+          Message(
+            role: MessageRole.assistant,
+            content: '',
+            toolName: 'run_command',
+            toolInput: {
+              'command':
+                  'curl -H "Authorization: Bearer sk-ant-AbCdEfGhIjKlMnOpQrSt"',
+            },
+          ),
+        ],
+        model: 'm',
+      );
+
+      final sent = provider.lastRequest!.messages.single.content;
+      expect(sent, isNot(contains('sk-ant-')));
+      expect(sent, contains('***'));
     });
 
     test('returns null on a provider error', () async {

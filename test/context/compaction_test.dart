@@ -288,6 +288,62 @@ void main() {
       expect(result.any((m) => m.content.contains('…')), isTrue);
     });
 
+    test('does not summarize a history that already fits', () async {
+      // Regression: the 512-token reserve was applied unconditionally, so a
+      // history between (budget - 512) and budget was needlessly truncated
+      // and a paid summary requested.
+      var called = false;
+      final justUnder = [
+        for (var i = 0; i < 12; i++) userMsg('m$i ${"x" * 1000}'),
+      ];
+      final result = await Compaction.compact(
+        justUnder,
+        budget,
+        'm',
+        summarizer: (dropped) async {
+          called = true;
+          return '- summary';
+        },
+      );
+
+      final tokens = justUnder.fold<int>(
+        0,
+        (sum, m) => sum + estimateTokens(m.content),
+      );
+      if (tokens <= budget.conversationHistory) {
+        expect(called, isFalse, reason: 'history already fits');
+        expect(result.length, equals(justUnder.length));
+      }
+    });
+
+    test('the summary survives relevance filtering', () async {
+      // Regression: the summary was injected before the top-N filter, so with
+      // enough retained messages it could be filtered out — losing the only
+      // record of history that had already been discarded.
+      final many = [
+        for (var i = 0; i < 200; i++) ...[
+          userMsg('unrelated topic $i ${"x" * 200}'),
+          Message(
+            role: MessageRole.assistant,
+            content: 'unrelated reply $i ${"y" * 200}',
+          ),
+        ],
+      ];
+
+      final result = await Compaction.compact(
+        many,
+        budget,
+        'something entirely different',
+        summarizer: (dropped) async => '- SUMMARY_MARKER',
+      );
+
+      expect(
+        result.any((m) => m.content.contains('SUMMARY_MARKER')),
+        isTrue,
+        reason: 'the summary must not be filtered out',
+      );
+    });
+
     test('without a summarizer behaves exactly as before', () async {
       final messages = oversizedHistory();
       final withNone = await Compaction.compact(messages, budget, 'question');

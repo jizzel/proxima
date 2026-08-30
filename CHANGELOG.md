@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.7.1] — 2026-08-30
+
 ### Fixed
 
 - **The REPL crashed at startup when the terminal size was unavailable** — `stdout.terminalColumns` throws a `StdoutException` rather than returning a default whenever the size cannot be read (output piped to a file, some CI runners, a PTY opened without a window size). Three unguarded call sites — the REPL header and two in the renderer — turned that into an unhandled exception before the first prompt, a hard crash over a cosmetic detail. All three now go through guarded `terminalWidth()` / `terminalHeight()` helpers that fall back to 80×24
@@ -394,7 +398,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/jizzel/proxima/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/jizzel/proxima/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/jizzel/proxima/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/jizzel/proxima/compare/v1.5.0...v1.6.0

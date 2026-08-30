@@ -192,6 +192,18 @@ class ProximaRepl {
   /// env map in one place stops them drifting apart — the critic previously
   /// omitted the OpenAI keys, so an OpenAI-backed write threw an auth error
   /// before the permission prompt could be shown.
+  /// Renders an ArgumentError as user-facing advice.
+  ///
+  /// `ArgumentError.toString()` prefixes "Invalid argument(s):", which reads as
+  /// an internal fault for what is almost always a bad `--model` value.
+  static String _argumentMessage(ArgumentError e) {
+    final message = e.message?.toString() ?? e.toString();
+    return message.contains('provider')
+        ? '$message\n  Use "provider/model", e.g. openai/gpt-4o or '
+              'anthropic/claude-sonnet-4-6. Run /model to see what is available.'
+        : message;
+  }
+
   /// Environment variable that supplies credentials for [model]'s provider,
   /// so an auth failure points at the right one rather than always Anthropic.
   static String _authEnvVarFor(String model) {
@@ -457,6 +469,12 @@ class ProximaRepl {
         );
       }
       return;
+    } on ArgumentError catch (e) {
+      // A bad --model or config value is the user's mistake, not an internal
+      // fault; "Unexpected error: Invalid argument(s)" read like a crash.
+      _renderer.hideSpinner();
+      _renderer.printError('  ⚠ ${_argumentMessage(e)}');
+      return;
     } catch (e) {
       _renderer.hideSpinner();
       _renderer.printError('  ⚠ Unexpected error: $e');
@@ -540,6 +558,11 @@ class ProximaRepl {
           );
         }
         _agentLoop = null; // reset so user can switch model and retry
+        continue;
+      } on ArgumentError catch (e) {
+        _renderer.hideSpinner();
+        _renderer.printError('  ⚠ ${_argumentMessage(e)}');
+        _agentLoop = null; // let the user switch model and retry
         continue;
       } catch (e) {
         _renderer.hideSpinner();

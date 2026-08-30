@@ -444,6 +444,10 @@ Arguments are also masked by name: anything called `api_key`, `token`, `secret`,
 matter — `api-key`, `x-api-key`, `apiKey`, and `API_KEY` are all recognised —
 while similar-looking names such as `author` are left alone.
 
+Your own messages are masked too, so a key pasted into a prompt does not reach
+the session file. Tool *results* are left intact so `--resume` replays real file
+contents and command output.
+
 Terminal output is deliberately **not** masked: the confirmation prompt shows you
 the real command you are approving. Masking is applied only on the way to disk.
 

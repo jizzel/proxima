@@ -1369,8 +1369,11 @@ every tool call is covered, not just risky ones.
   such as `Authorization: Basic dXNlcjpwYXNz` — on disk in the clear. The match
   stops at a quote, comma, or semicolon so the surrounding command stays intact.
   A bare scheme with no `Authorization:` prefix — `Bearer`, `Basic`, `Digest`,
-  `APIKey` — is also matched when the credential is ≥8 non-space characters, so
-  ordinary prose such as `git commit -m "basic cleanup"` is not mangled. `Token`
+  `APIKey` — is also matched, but only when the following token *looks* like a
+  credential: it carries a digit, base64/URL punctuation, or mixes letter case
+  mid-token. Length alone is not enough — an 8-character minimum turned
+  `implement basic authentication middleware` into `implement *** middleware`,
+  destroying the task on `--resume`. `Token`
   is handled by a stricter rule (≥12 chars and must contain a digit) because it
   is a common English word.
 - **Argument names:** `api_key`, `apikey`, `token`, `secret`, `password`,
@@ -1386,6 +1389,9 @@ every tool call is covered, not just risky ones.
   collide with `auth`, nor `tokenizer` with `token`.
 
 Replacement is `***`. Nested maps and lists are recursed into.
+
+User and assistant message content is masked as well — a credential pasted into
+a prompt would otherwise be stored verbatim.
 
 **Deliberately NOT masked:**
 - **Terminal output** — `permission_prompt.dart`, `renderer.dart` `_fmtArgs`,

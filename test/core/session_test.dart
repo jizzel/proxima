@@ -200,4 +200,56 @@ void main() {
       expect(ProximaSession.fromJson(json).status, equals(TaskStatus.running));
     });
   });
+  group('secret masking in message content', () {
+    const key = 'sk-ant-FAKE0123456789abcdefGHIJ';
+
+    test('masks a credential pasted into a user prompt', () {
+      // Regression: found by testing the shipped binary — masking covered tool
+      // *arguments*, so a key typed into a prompt sat verbatim in the session
+      // file. A prompt is a plausible place for someone to paste one.
+      final session = ProximaSession.create(ProximaConfig.defaults())
+        ..addMessage(
+          Message(role: MessageRole.user, content: 'use Bearer $key please'),
+        );
+
+      final json = session.toJsonString();
+      expect(json, isNot(contains(key)));
+      expect(json, contains('***'));
+    });
+
+    test('leaves tool results verbatim so --resume replays them', () {
+      // Deliberate: masking a file's contents would make a resumed session
+      // re-run the tools it had already run.
+      final session = ProximaSession.create(ProximaConfig.defaults())
+        ..addMessage(
+          Message(
+            role: MessageRole.tool,
+            toolName: 'read_file',
+            toolCallId: 'c1',
+            content: 'const realFileContents = 42;',
+          ),
+        );
+
+      expect(session.toJsonString(), contains('realFileContents = 42'));
+    });
+
+    test('does not touch ordinary prose', () {
+      final session = ProximaSession.create(ProximaConfig.defaults())
+        ..addMessage(
+          Message(role: MessageRole.user, content: 'summarize this codebase'),
+        );
+
+      expect(session.toJsonString(), contains('summarize this codebase'));
+    });
+
+    test('never masks the live in-memory session', () {
+      // Providers send Message.content to the API and Compaction reads it;
+      // masking in memory would corrupt both.
+      final session = ProximaSession.create(ProximaConfig.defaults())
+        ..addMessage(Message(role: MessageRole.user, content: 'Bearer $key'));
+
+      session.toJsonString();
+      expect(session.history.single.content, contains(key));
+    });
+  });
 }

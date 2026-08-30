@@ -51,11 +51,29 @@ final List<RegExp> _secretPatterns = [
   // `-H "Bearer abc123"` or a structured header value `'Token abc123'`.
   // Covers the same scheme set as the header rule above — a narrower set would
   // leak Digest/APIKey/Token credentials carried in structured arguments.
-  // Requires a credential-shaped token (>=8 chars, no spaces) so ordinary prose
-  // such as `git commit -m "basic cleanup"` is not mangled.
+  // The credential must *look* like one, not merely be long: an 8-char
+  // minimum alone turned `implement basic authentication middleware` into
+  // `implement *** middleware`, destroying the task on --resume. Real
+  // credentials carry a digit, `=`, `-`, `_`, `.`, `+` or `/`, or mix letter
+  // case mid-token; English words do none of those.
+  // Split in two because the credential test needs letter case while the
+  // scheme name does not. A case-insensitive regex would make `[a-z][A-Z]`
+  // match any two letters, masking ordinary prose.
+  //
+  // (a) A credential carrying a digit or base64/URL punctuation.
   RegExp(
-    r'''\b(?:bearer|basic|digest|apikey)\s+[^\s"'`,;]{8,}''',
+    r'''\b(?:bearer|basic|digest|apikey)\s+'''
+    r'''(?=[^\s"'`,;]*[0-9=+/._-])[^\s"'`,;]{8,}''',
     caseSensitive: false,
+  ),
+  // (b) A letters-only base64 credential such as `Basic dXNlcjpwYXNz`, which
+  // carries no digit but does mix case mid-token — something English prose
+  // does not do. Case-sensitive so that test is meaningful; the scheme name
+  // is spelled out in both common casings.
+  RegExp(
+    r'''\b(?:[Bb]earer|BEARER|[Bb]asic|BASIC|[Dd]igest|DIGEST|'''
+    r'''[Aa][Pp][Ii][Kk]ey|APIKEY)\s+'''
+    r'''(?=[^\s"'`,;]*[a-z][A-Z])[^\s"'`,;]{8,}''',
   ),
   // `Token <cred>` is handled separately: `token` is a common English word, so
   // it additionally requires the credential to look like one (no spaces, mixed

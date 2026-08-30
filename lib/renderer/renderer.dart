@@ -140,7 +140,7 @@ class Renderer implements AgentCallbacks {
     }
     // Dim rule to visually close the turn.
     try {
-      final w = stdout.terminalColumns.clamp(20, 80);
+      final w = terminalWidth().clamp(20, 80);
       stdout.writeln(dim('─' * w));
     } catch (_) {}
   }
@@ -339,7 +339,7 @@ class Renderer implements AgentCallbacks {
 
       // Horizontal rules.
       if (RegExp(r'^[-*_]{3,}\s*$').hasMatch(line)) {
-        final termWidth = stdout.terminalColumns.clamp(20, 80);
+        final termWidth = terminalWidth().clamp(20, 80);
         buf.writeln(dim('─' * termWidth));
         continue;
       }

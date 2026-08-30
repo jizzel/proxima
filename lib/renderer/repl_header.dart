@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'ansi_helpers.dart';
 
 /// Renders the REPL header bar, fitting the terminal width.
@@ -8,7 +7,7 @@ class ReplHeader {
     required String workingDir,
     required String version,
   }) {
-    final termWidth = stdout.terminalColumns.clamp(40, 120);
+    final termWidth = terminalWidth().clamp(40, 120);
 
     // Provider icon.
     final provider = model.startsWith('ollama/') ? '🦙' : '✦';

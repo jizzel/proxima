@@ -247,7 +247,13 @@ class ProximaSession {
         : TokenUsage.zero,
     cumulativeCost: (json['cumulative_cost'] as num?)?.toDouble() ?? 0.0,
     iterationCount: json['iteration_count'] as int? ?? 0,
-    status: TaskStatus.values.byName(json['status'] as String? ?? 'running'),
+    // byName throws on an unrecognised value, which would make a session
+    // written by a newer build unloadable. Fall back instead.
+    status:
+        TaskStatus.values
+            .where((v) => v.name == (json['status'] as String? ?? 'running'))
+            .firstOrNull ??
+        TaskStatus.running,
   );
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());

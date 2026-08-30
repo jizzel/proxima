@@ -57,7 +57,7 @@ class ProximaConfig {
     mode: SessionMode.confirm,
     debug: false,
     dryRun: false,
-    maxIterations: 10,
+    maxIterations: 25,
     maxRetriesTool: 3,
     maxRetriesLlm: 2,
     maxRetriesSchema: 2,

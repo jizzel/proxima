@@ -11,7 +11,12 @@ enum SessionMode { safe, confirm, auto }
 
 // ─── Task / Agent ────────────────────────────────────────────────────────────
 
-enum TaskStatus { running, completed, failed }
+/// Outcome of a turn.
+///
+/// `budgetExhausted` is deliberately distinct from `failed`: the turn may have
+/// done real work and simply run out of iterations, which callers should be
+/// able to tell apart from an actual error.
+enum TaskStatus { running, completed, failed, budgetExhausted }
 
 enum ResponseType { toolCall, final_, clarify, error }
 

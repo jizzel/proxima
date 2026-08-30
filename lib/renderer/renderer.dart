@@ -169,6 +169,13 @@ class Renderer implements AgentCallbacks {
   }
 
   @override
+  void onNotice(String message) {
+    hideSpinner();
+    // Dim, not red: this is information, not a breakage.
+    stdout.writeln(dim('  ⏸ $message'));
+  }
+
+  @override
   Future<bool> onStuck(
     List<ToolCall> recentCalls, {
     String reason = 'stuck',

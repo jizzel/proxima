@@ -309,7 +309,12 @@ Future<ProximaSession> runTurn(ProximaSession session, String userInput) async {
 
 | Constraint | Default | Configurable |
 |---|---|---|
-| Max iterations per request | 10 | Yes |
+| Max iterations per request | 25 | Yes |
+
+Exhausting the budget returns `TaskStatus.budgetExhausted`, not `failed`, and is
+reported through `AgentCallbacks.onNotice` rather than `onError` — the turn may
+have done real work and simply run out of steps, and callers need to tell that
+apart from an actual error.
 | Max retries on tool error | 3 | Yes |
 | Max retries on LLM error | 2 | Yes |
 | Max retries on schema violation | 2 | No |
@@ -1426,7 +1431,7 @@ providers:
     model: ~
 
 agent:
-  max_iterations: 10
+  max_iterations: 25
   max_tool_retries: 3
   max_llm_retries: 2
   tool_timeout_seconds: 30

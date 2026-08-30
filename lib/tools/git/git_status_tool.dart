@@ -27,6 +27,13 @@ class GitStatusTool implements ProximaTool {
       '--short',
     ], workingDirectory: workingDir);
     if (result.exitCode != 0) {
+      // Not being a git repository is an ordinary condition, not a failure —
+      // a scaffolded project has no repo yet, and a hard error there reads as
+      // a broken tool. Report it as information the model can act on.
+      final stderr = (result.stderr as String).toLowerCase();
+      if (stderr.contains('not a git repository')) {
+        return 'Not a git repository.';
+      }
       throw ToolError(name, 'git_status failed: ${result.stderr}');
     }
     final out = (result.stdout as String).trim();

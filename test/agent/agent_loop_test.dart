@@ -146,6 +146,9 @@ class MockCallbacks implements AgentCallbacks {
   void onClarify(String question) => events.add('clarify: $question');
   @override
   void onError(String message) => events.add('error: $message');
+
+  @override
+  void onNotice(String message) => events.add('notice: $message');
   @override
   Future<bool> onStuck(
     List<ToolCall> recentCalls, {
@@ -205,13 +208,14 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  AgentLoop makeLoop(LLMProvider provider) => AgentLoop(
-    provider: provider,
-    toolRegistry: toolRegistry,
-    permissionGate: permissionGate,
-    contextBuilder: contextBuilder,
-    config: config,
-  );
+  AgentLoop makeLoop(LLMProvider provider, {ProximaConfig? loopConfig}) =>
+      AgentLoop(
+        provider: provider,
+        toolRegistry: toolRegistry,
+        permissionGate: permissionGate,
+        contextBuilder: contextBuilder,
+        config: loopConfig ?? config,
+      );
 
   test('final response after one tool call', () async {
     // Create a test file.
@@ -285,7 +289,9 @@ void main() {
   test('max iterations reached', () async {
     // Provider always returns tool calls, never final.
     // Uses a non-read-only tool so spinning detection does not fire before
-    // max iterations.
+    // max iterations. The cap is set explicitly rather than relying on the
+    // default, which is tuned for real multi-file work and may change.
+    final cappedConfig = config.copyWith(maxIterations: 5);
     final calls = List.generate(
       15,
       (i) => LLMResponse(
@@ -302,13 +308,26 @@ void main() {
 
     final provider = MockProvider(calls);
     final callbacks = MockCallbacks();
-    final session = ProximaSession.create(config);
+    final session = ProximaSession.create(cappedConfig);
     final result = await makeLoop(
       provider,
+      loopConfig: cappedConfig,
     ).runTurn(session, 'run all commands', callbacks);
 
-    expect(result.status, TaskStatus.failed);
-    expect(callbacks.events.any((e) => e.contains('error')), isTrue);
+    // Exhausting the budget is not a failure: the turn may have done real
+    // work and simply run out of steps. Callers must be able to tell the two
+    // apart, and the user must not see it rendered as an error.
+    expect(result.status, TaskStatus.budgetExhausted);
+    expect(
+      callbacks.events.any((e) => e.startsWith('notice:')),
+      isTrue,
+      reason: 'reported as a notice',
+    );
+    expect(
+      callbacks.events.any((e) => e.startsWith('error:')),
+      isFalse,
+      reason: 'not reported as an error',
+    );
   });
 
   test('spinning detection fires when only read-only tools called', () async {
@@ -458,5 +477,54 @@ void main() {
       assistantMessages.last.content,
       'fallback response after stream error',
     );
+  });
+  test('resets the iteration budget on every turn', () async {
+    // Regression: iterationCount is a persisted session field that was only
+    // reset after a *failed* turn, so it accumulated across successful ones.
+    // Once it reached the cap the loop guard was false on entry, the body
+    // never ran, and the user's message — already in history — was silently
+    // never sent to the model.
+    final session = ProximaSession.create(config);
+
+    // Simulate several completed turns having already consumed the budget.
+    session.iterationCount = config.maxIterations + 5;
+
+    final provider = MockProvider([
+      LLMResponse(body: FinalResponse('answered'), usage: TokenUsage.zero),
+    ]);
+    final result = await makeLoop(
+      provider,
+    ).runTurn(session, 'a fresh question', MockCallbacks());
+
+    expect(
+      result.status,
+      TaskStatus.completed,
+      reason: 'the turn must run despite earlier turns using the budget',
+    );
+    expect(
+      result.history.last.content,
+      contains('answered'),
+      reason: 'the message reached the model',
+    );
+  });
+
+  test('each turn gets the full budget, not a shared one', () async {
+    final session = ProximaSession.create(config);
+
+    for (var turn = 0; turn < 3; turn++) {
+      final provider = MockProvider([
+        LLMResponse(body: FinalResponse('reply $turn'), usage: TokenUsage.zero),
+      ]);
+      final result = await makeLoop(
+        provider,
+      ).runTurn(session, 'question $turn', MockCallbacks());
+
+      expect(result.status, TaskStatus.completed, reason: 'turn $turn');
+      expect(
+        session.iterationCount,
+        lessThanOrEqualTo(config.maxIterations),
+        reason: 'the count must not accumulate across turns',
+      );
+    }
   });
 }

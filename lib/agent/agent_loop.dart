@@ -21,6 +21,11 @@ abstract class AgentCallbacks {
   void onClarify(String question);
   void onError(String message);
 
+  /// Reports something the user should see that is *not* a failure — a turn
+  /// running out of its iteration budget, for instance. Rendered without the
+  /// error styling so a normal continuation does not read as a breakage.
+  void onNotice(String message);
+
   /// Called when the agent is stuck (repeated tool calls) or spinning
   /// (only read-only calls with no progress). [reason] is either
   /// `'stuck'` or `'spinning'`. Returns true to continue, false to abort.
@@ -76,6 +81,13 @@ class AgentLoop {
     String userInput,
     AgentCallbacks callbacks,
   ) async {
+    // The cap is per *request* (SPECS §5.2), but iterationCount is a persisted
+    // session field that only ever reset after a failed turn. It therefore
+    // accumulated across successful turns until the guard below was already
+    // false on entry — at which point the loop never ran and the user's
+    // message, appended just above, was silently never sent to the model.
+    session.iterationCount = 0;
+
     // Add user message to history.
     session.addMessage(Message(role: MessageRole.user, content: userInput));
 
@@ -487,9 +499,16 @@ class AgentLoop {
       }
     }
 
-    // Max iterations reached.
-    callbacks.onError('Max iterations (${_config.maxIterations}) reached.');
-    session.status = TaskStatus.failed;
+    // Budget for this turn exhausted. Not a failure — the turn may have made
+    // real progress and simply run out of steps, so say how to continue rather
+    // than reporting an error. Runaway loops are caught by the stuck and
+    // spinning detectors, which fire long before this.
+    callbacks.onNotice(
+      'Reached the ${_config.maxIterations}-step limit for this turn. '
+      'Send another message to carry on, or raise max_iterations in '
+      '.proxima/config.yaml (project) or ~/.proxima/config.yaml (user).',
+    );
+    session.status = TaskStatus.budgetExhausted;
     return session;
   }
 

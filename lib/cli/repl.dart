@@ -116,10 +116,17 @@ class ProximaRepl {
               final providerRegistry = _buildProviderRegistry();
               final provider = providerRegistry.create(_activeModel);
               final runner = SubagentRunner(provider: provider);
+              // patch_file's schema is old_str/new_str — there is no `patch`
+              // argument, so the critic used to receive an empty string and
+              // report every patch as "empty or missing" instead of reviewing
+              // it. Render the edit as a diff it can actually judge.
+              final args = toolCall.args;
               final content =
-                  toolCall.args['content'] as String? ??
-                  toolCall.args['patch'] as String? ??
-                  '';
+                  args['content'] as String? ??
+                  (args['old_str'] != null
+                      ? '--- before\n${args['old_str']}\n'
+                            '+++ after\n${args['new_str'] ?? ''}'
+                      : '');
               return runner.runCritic(
                 tool: toolCall.tool,
                 // The critic was given content with no target, so it reported
@@ -546,9 +553,12 @@ class ProximaRepl {
 
       await _sessionStorage.save(_session);
 
-      if (_session.status == TaskStatus.failed) {
+      // Both a failure and an exhausted budget leave the session in a
+      // terminal state; the next turn must start from `running` either way.
+      // The iteration counter is reset by runTurn itself.
+      if (_session.status == TaskStatus.failed ||
+          _session.status == TaskStatus.budgetExhausted) {
         _session.status = TaskStatus.running;
-        _session.iterationCount = 0;
       }
     }
 

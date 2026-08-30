@@ -239,7 +239,7 @@ model: anthropic/claude-sonnet-4-6
 mode: confirm          # confirm | safe | auto
 debug: false
 dry_run: false
-max_iterations: 10
+max_iterations: 25
 max_subagent_delegations: 2    # max delegate_to_subagent calls per turn
 anthropic_api_key: sk-ant-...   # takes precedence over $ANTHROPIC_API_KEY
 openai_api_key: sk-proj-...     # takes precedence over $OPENAI_API_KEY

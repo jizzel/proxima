@@ -104,6 +104,9 @@ class MockCallbacks implements AgentCallbacks {
   void onClarify(String question) => events.add('clarify: $question');
   @override
   void onError(String message) => events.add('error: $message');
+
+  @override
+  void onNotice(String message) => events.add('notice: $message');
   @override
   Future<bool> onStuck(
     List<ToolCall> recentCalls, {

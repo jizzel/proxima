@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:proxima/tools/git/git_status_tool.dart';
-import 'package:proxima/tools/tool_interface.dart';
 import 'package:proxima/core/types.dart';
 
 void main() {
@@ -54,10 +53,14 @@ void main() {
     expect(result, contains('staged.dart'));
   });
 
-  test('throws ToolError for non-git directory', () async {
+  test('reports a non-git directory instead of failing', () async {
+    // Not being a repository is an ordinary condition — a freshly scaffolded
+    // project has no repo yet, and a hard error there reads as a broken tool.
     final nonGit = await Directory.systemTemp.createTemp('proxima_nongit_');
     addTearDown(() => nonGit.delete(recursive: true));
-    expect(() => tool.execute({}, nonGit.path), throwsA(isA<ToolError>()));
+
+    final result = await tool.execute({}, nonGit.path);
+    expect(result, contains('Not a git repository'));
   });
 
   test('dryRun returns expected preview', () async {

@@ -178,4 +178,26 @@ void main() {
       );
     });
   });
+  group('TaskStatus persistence', () {
+    test('every status round-trips through JSON', () {
+      for (final status in TaskStatus.values) {
+        final session = ProximaSession.create(ProximaConfig.defaults())
+          ..status = status;
+        final restored = ProximaSession.fromJson(
+          jsonDecode(session.toJsonString()) as Map<String, dynamic>,
+        );
+        expect(restored.status, equals(status), reason: status.name);
+      }
+    });
+
+    test('an unrecognised status falls back rather than throwing', () {
+      // A session written by a newer build must still load — byName would
+      // throw and make the file unreadable.
+      final session = ProximaSession.create(ProximaConfig.defaults());
+      final json = jsonDecode(session.toJsonString()) as Map<String, dynamic>;
+      json['status'] = 'someFutureStatus';
+
+      expect(ProximaSession.fromJson(json).status, equals(TaskStatus.running));
+    });
+  });
 }

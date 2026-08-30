@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:proxima/core/secret_masker.dart';
+import 'package:proxima/core/types.dart';
 
 void main() {
   group('maskSecretsInString', () {
@@ -326,6 +328,23 @@ void main() {
       ]) {
         expect(maskSecretsInString(input), equals(input), reason: input);
       }
+    });
+  });
+  group('ToolCall serialisation', () {
+    test('masks args and reasoning at the serialisation boundary', () {
+      // Not currently reached by session persistence, but leaving one
+      // boundary unmasked is how the others drifted apart before.
+      final call = ToolCall(
+        tool: 'run_command',
+        args: const {'command': 'curl -H "Bearer sk-ant-AbCdEfGhIjKlMnOpQrSt"'},
+        reasoning: 'using key sk-proj-EXAMPLEfakeKEY0123456789abcdefGHIJ',
+      );
+
+      final json = jsonEncode(call.toJson());
+      expect(json, isNot(contains('sk-ant-')));
+      expect(json, isNot(contains('sk-proj-')));
+      expect(json, contains('***'));
+      expect(json, contains('run_command'), reason: 'tool name preserved');
     });
   });
 }

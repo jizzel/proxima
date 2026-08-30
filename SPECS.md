@@ -1387,6 +1387,9 @@ every tool call is covered, not just risky ones.
 
 Replacement is `***`. Nested maps and lists are recursed into.
 
+User and assistant message content is masked as well — a credential pasted into
+a prompt would otherwise be stored verbatim.
+
 **Deliberately NOT masked:**
 - **Terminal output** — `permission_prompt.dart`, `renderer.dart` `_fmtArgs`,
   `task_summary_renderer.dart`. The confirm prompt must show the *real* command

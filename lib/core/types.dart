@@ -41,7 +41,14 @@ class Message {
 
   Map<String, dynamic> toJson() => {
     'role': role.name,
-    'content': content,
+    // User and assistant text is masked — a credential pasted into a prompt
+    // would otherwise sit verbatim in the session file. Tool *results* are
+    // deliberately left alone so `--resume` replays real file contents and
+    // command output rather than making the model re-run tools to recover
+    // them.
+    'content': role == MessageRole.tool
+        ? content
+        : maskSecretsInString(content),
     if (toolName != null) 'tool_name': toolName,
     if (toolCallId != null) 'tool_call_id': toolCallId,
     if (toolInput != null) 'tool_input': maskSecrets(toolInput!),
@@ -81,8 +88,11 @@ class ToolCall {
 
   Map<String, dynamic> toJson() => {
     'tool': tool,
-    'args': args,
-    'reasoning': reasoning,
+    // Masked like every other serialisation boundary. Not currently reached by
+    // session persistence, but leaving one boundary unmasked is how the others
+    // drifted apart before.
+    'args': maskSecrets(args),
+    'reasoning': maskSecretsInString(reasoning),
     if (callId != null) 'call_id': callId,
   };
 

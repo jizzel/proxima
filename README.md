@@ -11,7 +11,7 @@ A terminal-native, model-agnostic coding agent built in Dart. Proxima understand
 - **Permission gate** — Every destructive action requires approval. Risk levels: `safe` (auto), `confirm` (diff + y/n), `high_risk` (typed CONFIRM), `blocked` (rejected outright).
 - **Persistent sessions** — Conversation history saved to `~/.proxima/sessions/`. Resume with `--resume <id>`.
 - **Persistent input history** — Command history saved across sessions (`~/.proxima/input_history`). Navigate with ↑/↓.
-- **Interactive suggestion panel** — Tab completion for slash commands and model names. Arrow keys navigate; Enter selects and executes.
+- **Inline completion** — Tab completion for slash commands and model names, shown as dim text on the input line itself. Tab accepts; press again to cycle.
 - **Audit log** — Every permission decision appended to `~/.proxima/audit.jsonl`.
 - **Undo** — `/undo` restores the last file changed by `write_file` or `patch_file`.
 - **Dry-run mode** — `--dry-run` shows what the agent would do without executing anything.
@@ -153,7 +153,12 @@ proxima --model openai/gpt-4o
 ```
 
 Available models are discovered live from the API, so newly released models
-appear in `/model` automatically.
+appear in `/model` automatically. The picker shows the current generations; any
+other model the API serves still works by name:
+
+```bash
+proxima --model openai/gpt-4o        # not in the picker, still runs
+```
 
 **OpenAI-compatible endpoints.** Set `openai_base_url` (or `OPENAI_BASE_URL`) to
 point the same provider at Groq, Together, OpenRouter, or LM Studio:
@@ -217,10 +222,9 @@ Switch models from inside the REPL:
 | Key | Action |
 |---|---|
 | ↑ / ↓ | Scroll through input history |
-| ↑ / ↓ (suggestion panel) | Navigate suggestions |
 | Enter (on suggestion) | Accept and execute |
-| Tab | Accept top suggestion into buffer |
-| Escape | Dismiss suggestion panel |
+| Tab | Accept the inline completion; press again to cycle |
+| Escape | Dismiss the inline completion |
 | Ctrl-A / Home | Move cursor to start |
 | Ctrl-E / End | Move cursor to end |
 | Ctrl-K | Delete from cursor to end of line |

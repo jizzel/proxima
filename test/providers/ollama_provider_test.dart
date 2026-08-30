@@ -4,6 +4,7 @@ import 'package:http/testing.dart';
 import 'package:test/test.dart';
 import 'package:proxima/core/types.dart';
 import 'package:proxima/providers/provider_interface.dart';
+import 'package:proxima/providers/openai_provider.dart';
 import 'package:proxima/providers/ollama_provider.dart';
 
 const _textResponse = '''
@@ -315,6 +316,16 @@ void main() {
 
     test('returns empty for a missing models key', () async {
       expect(await modelsProvider('{}').listModels(), isEmpty);
+    });
+
+    // Locally-pulled tags are a short, user-chosen list whose `name:tag` form
+    // carries no version family, so picker curation must leave them intact.
+    test('locally pulled tags survive picker curation', () async {
+      final models = await modelsProvider(
+        '{"models":[{"name":"qwen2.5-coder:32b"},{"name":"llama3.2:1b"},'
+        '{"name":"mistral:latest"}]}',
+      ).listModels();
+      expect(OpenAIProvider.curate(models), equals(models));
     });
 
     test('skips entries with no name', () async {

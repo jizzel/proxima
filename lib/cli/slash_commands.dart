@@ -165,23 +165,37 @@ class SlashCommandHandler {
   }) async {
     // Use cached lists first; only do a live fetch in interactive (TTY) mode
     // to avoid blocking non-interactive callers (tests, piped output, etc.).
+    final problems = <String>[];
+
     var ollamaModels = cachedOllamaModels;
     if (ollamaModels.isEmpty && _isTty()) {
-      ollamaModels = await OllamaProvider(
+      final discovery = await OllamaProvider(
         model: '',
         baseUrl: _ollamaBaseUrl,
-      ).listModels().catchError((_) => <String>[]);
+      ).discoverModels();
+      ollamaModels = discovery.models;
+      // Ollama being absent is the normal case for a cloud-only user, so it is
+      // only worth mentioning when it is configured to somewhere non-default.
+      if (!discovery.ok && _ollamaBaseUrl != 'http://localhost:11434') {
+        problems.add('Ollama: ${discovery.error}');
+      }
     }
 
-    var openaiModels = cachedOpenaiModels;
-    if (openaiModels.isEmpty &&
-        _isTty() &&
-        (openaiApiKey != null && openaiApiKey.isNotEmpty)) {
-      openaiModels = await OpenAIProvider(
-        model: '',
-        apiKey: openaiApiKey,
-        baseUrl: _openaiBaseUrl,
-      ).listModels().catchError((_) => <String>[]);
+    // The cache is deliberately complete (tab completion resolves older ids),
+    // so narrow it here for the picker.
+    var openaiModels = OpenAIProvider.curate(cachedOpenaiModels);
+    if (openaiModels.isEmpty && _isTty()) {
+      if (openaiApiKey == null || openaiApiKey.isEmpty) {
+        problems.add('OpenAI: no API key (set OPENAI_API_KEY)');
+      } else {
+        final discovery = await OpenAIProvider(
+          model: '',
+          apiKey: openaiApiKey,
+          baseUrl: _openaiBaseUrl,
+        ).discoverModels();
+        openaiModels = OpenAIProvider.curate(discovery.models);
+        if (!discovery.ok) problems.add('OpenAI: ${discovery.error}');
+      }
     }
 
     // Build the full ordered model list. Anthropic ids come from the provider
@@ -196,6 +210,18 @@ class SlashCommandHandler {
       for (final m in openaiModels) 'openai/$m',
       for (final m in ollamaModels) 'ollama/$m',
     ];
+
+    // The active model must always be selectable. When its provider's discovery
+    // fails it is otherwise absent from its own picker — the running model
+    // could not be re-selected after switching away from it.
+    if (currentModel.isNotEmpty && !allModels.contains(currentModel)) {
+      allModels.insert(0, currentModel);
+    }
+
+    // A short list used to be indistinguishable from a failing provider.
+    for (final problem in problems) {
+      _renderer.printDim('  ⚠ $problem');
+    }
 
     if (allModels.isEmpty) {
       _renderer.printDim('  (No models available)');
@@ -226,8 +252,11 @@ class SlashCommandHandler {
     if (models.isEmpty) return null;
 
     // Non-interactive fallback: print a plain list when stdout is not a TTY
-    // (e.g. during unit tests or when output is piped).
-    if (!_isTty()) {
+    // (e.g. during unit tests or when output is piped), or when the terminal is
+    // too short to frame even one row between the header and the hint —
+    // drawing there would overflow and corrupt the scrollback. A non-TTY can
+    // also report a height of 0, so this covers that too.
+    if (!_isTty() || Console.scrolling().windowHeight < _minPickerHeight) {
       _renderer.print('Current model: $currentModel');
       _renderer.print('');
       for (final m in models) {
@@ -247,7 +276,9 @@ class SlashCommandHandler {
     stdout.writeln(
       dim('  Select model  ↑/↓ navigate · Enter confirm · Esc cancel'),
     );
-    _renderModelList(
+    // Tracks what is physically on screen, so a mid-picker terminal resize
+    // cannot desync the cursor arithmetic from the drawn rows.
+    var drawnRows = _renderModelList(
       console,
       models,
       selected,
@@ -263,20 +294,34 @@ class SlashCommandHandler {
           case ControlCharacter.arrowUp:
             if (selected > 0) {
               selected--;
-              _renderModelList(console, models, selected, currentModel);
+              drawnRows = _renderModelList(
+                console,
+                models,
+                selected,
+                currentModel,
+                previousRows: drawnRows,
+              );
             }
           case ControlCharacter.arrowDown:
             if (selected < models.length - 1) {
               selected++;
-              _renderModelList(console, models, selected, currentModel);
+              drawnRows = _renderModelList(
+                console,
+                models,
+                selected,
+                currentModel,
+                previousRows: drawnRows,
+              );
             }
           case ControlCharacter.enter:
-            // Clear the picker (list + header line) before returning.
-            _clearModelList(console, models.length + 1);
+            // Clear exactly what was drawn: the rows on screen, the hint line,
+            // and the header. Recomputing the window here read the *current*
+            // terminal height, which is wrong after a resize.
+            _clearModelList(console, drawnRows + 2);
             return models[selected];
           case ControlCharacter.escape:
           case ControlCharacter.ctrlC:
-            _clearModelList(console, models.length + 1);
+            _clearModelList(console, drawnRows + 2);
             return null;
           default:
             break;
@@ -289,19 +334,71 @@ class SlashCommandHandler {
   ///
   /// [firstRender] must be true on the initial draw to skip the cursor-up
   /// that would otherwise overwrite content above the picker.
-  void _renderModelList(
+  /// Rows the picker will draw, given the terminal height.
+  ///
+  /// The list must fit on screen: redrawing moved the cursor up by the *full*
+  /// list length, so once that exceeded the window the cursor could not return
+  /// to the top and every keypress appended another copy instead of
+  /// overwriting. With ~90 models the picker filled the scrollback.
+  /// The picker occupies `window + 2` rows — a header above and the hint below
+  /// — so the window must stay within the terminal or the redraw overflows and
+  /// corrupts the scrollback again. The floor is therefore derived from the
+  /// actual height, never a fixed minimum: on a 6-row pane a hardcoded 6 rows
+  /// would draw 8. One row is still reserved for the prompt where there is room
+  /// for it.
+  /// Below this the picker cannot draw a header, one row, and the hint, so
+  /// `_runModelPicker` prints the plain list instead.
+  static const _minPickerHeight = 3;
+
+  static int _pickerWindow(Console console, int modelCount) =>
+      pickerWindowFor(console.windowHeight, modelCount);
+
+  /// The arithmetic behind [_pickerWindow], separated from the `Console` so it
+  /// can be tested directly at heights a test cannot otherwise produce.
+  ///
+  /// Invariant: the return value plus two (header and hint) never exceeds
+  /// [height], for every height at or above [_minPickerHeight]. Visible for
+  /// testing.
+  static int pickerWindowFor(int height, int modelCount) {
+    // Below four rows there is no room for chrome plus a row; show one and let
+    // the position hint carry navigation.
+    final usable = height < 4 ? 1 : (height > 6 ? height - 4 : height - 3);
+    return modelCount < usable ? modelCount : usable;
+  }
+
+  /// Exposed for the regression test that pins the fallback threshold.
+  static int get minPickerHeight => _minPickerHeight;
+
+  /// Draws the visible window and returns how many list rows it drew.
+  ///
+  /// [previousRows] is what the last draw actually put on screen. The cursor
+  /// must move by that, not by a freshly computed window: if the terminal is
+  /// resized while the picker is open the two disagree, and the redraw either
+  /// moves above the old list (growing) or leaves stale rows behind
+  /// (shrinking) — the same desync that caused the original corruption.
+  int _renderModelList(
     Console console,
     List<String> models,
     int selected,
     String current, {
+    int previousRows = 0,
     bool firstRender = false,
   }) {
-    // On every call after the first, move the cursor back up to overwrite.
-    if (!firstRender && models.isNotEmpty) {
-      stdout.write('\x1b[${models.length}A'); // move up N lines
+    final window = _pickerWindow(console, models.length);
+
+    // Scroll the window so the selection stays inside it.
+    var start = selected - (window ~/ 2);
+    if (start < 0) start = 0;
+    if (start > models.length - window) start = models.length - window;
+    if (start < 0) start = 0;
+    final end = (start + window).clamp(0, models.length);
+
+    // Move up by what the *previous* draw left on screen, plus its hint line.
+    if (!firstRender && previousRows > 0) {
+      stdout.write('\x1b[${previousRows + 1}A');
     }
 
-    for (int i = 0; i < models.length; i++) {
+    for (int i = start; i < end; i++) {
       final isCurrent = models[i] == current;
       final isSelected = i == selected;
       final activeTag = isCurrent ? dim('  (active)') : '';
@@ -315,6 +412,13 @@ class SlashCommandHandler {
       }
       stdout.write('\r\x1b[K$line\n');
     }
+
+    final hidden = models.length - (end - start);
+    final hint = hidden > 0
+        ? '  … $hidden more · ${selected + 1}/${models.length}'
+        : '  ${selected + 1}/${models.length}';
+    stdout.write('\r\x1b[K${dim(hint)}\n');
+    return end - start;
   }
 
   /// Moves the cursor up [lineCount] lines and erases each line.

@@ -136,6 +136,30 @@ class OllamaProvider implements LLMProvider {
     }
   }
 
+  /// [listModels] with the failure reason preserved.
+  ///
+  /// "Ollama isn't running" is the overwhelmingly common case and is normal
+  /// rather than an error, so it is reported as a plain absence with the
+  /// `ollama serve` hint that `transportMessage` already produces.
+  Future<ModelDiscovery> discoverModels() async {
+    try {
+      final response = await _client.get(Uri.parse('$_baseUrl/api/tags'));
+      if (response.statusCode != 200) {
+        return ModelDiscovery.failed('HTTP ${response.statusCode}');
+      }
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final models = json['models'] as List<dynamic>? ?? [];
+      return ModelDiscovery(
+        models
+            .map((m) => (m as Map<String, dynamic>)['name'] as String? ?? '')
+            .where((n) => n.isNotEmpty)
+            .toList(),
+      );
+    } catch (e) {
+      return ModelDiscovery.failed(transportMessage(e, name, _baseUrl));
+    }
+  }
+
   /// Classifies a non-200 so callers can act on it.
   ///
   /// A local Ollama rarely rate-limits, but the same endpoint shape is served

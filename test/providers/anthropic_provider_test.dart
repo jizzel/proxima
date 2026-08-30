@@ -4,6 +4,7 @@ import 'package:http/testing.dart';
 import 'package:test/test.dart';
 import 'package:proxima/core/types.dart';
 import 'package:proxima/providers/provider_interface.dart';
+import 'package:proxima/providers/openai_provider.dart';
 import 'package:proxima/providers/anthropic_provider.dart';
 
 const _textResponse = '''
@@ -519,6 +520,16 @@ void main() {
       final models = await provider.listModels();
       expect(models, isNotEmpty);
       expect(called, isFalse, reason: 'Anthropic has no models endpoint');
+    });
+
+    // The picker curates only OpenAI's catalogue; Anthropic's static list is
+    // already short and must reach the picker whole.
+    test('the static list survives picker curation unnarrowed', () async {
+      final models = await AnthropicProvider(
+        model: 'c',
+        apiKey: 'k',
+      ).listModels();
+      expect(OpenAIProvider.curate(models), equals(models));
     });
   });
 }

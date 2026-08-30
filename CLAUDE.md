@@ -107,6 +107,17 @@ fetch live, Anthropic returns a static list. Do **not** reintroduce hardcoded
 model consts in the CLI layer; the `/model` picker and tab completion both read
 from the providers so new releases need no code change.
 
+`listModels()` always returns the **complete** catalogue. The `/model` picker
+narrows OpenAI's via `OpenAIProvider.curate` (SPECS §6.2, "Picker curation");
+tab completion deliberately keeps the full list so an older id still resolves.
+Curation is presentation only — `--model`, config, and `/model <id>` accept any
+id the endpoint serves. Keep those two paths distinct when changing either.
+
+Two invariants in `curate` are load-bearing, and both were regressions once:
+versions rank **within a family** (a global ordering dropped `gpt-5.4` against
+`llama-3.3`), and an id with no parseable version is **kept** (requiring one hid
+`o3`/`o4-mini` and most of any proxy catalogue). Test both directions.
+
 **Plugin distribution:** official plugins install from a catalogue into
 `~/.proxima/plugins/` via `PluginInstaller`. Every download is checksum-verified
 and zip-slip-guarded before anything reaches disk. `proxima plugin ...` is

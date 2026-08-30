@@ -104,5 +104,52 @@ abstract class LLMProvider {
   Stream<LLMChunk> stream(CompletionRequest request);
 
   /// List available models (optional — returns empty if not supported).
+  ///
+  /// Returns the provider's *complete* catalogue. Narrowing it for an
+  /// interactive picker is the caller's job — see `OpenAIProvider.curate`,
+  /// which the `/model` picker applies while tab completion keeps the full
+  /// list so an older id still resolves.
   Future<List<String>> listModels() async => [];
+}
+
+/// Outcome of a model-discovery attempt.
+///
+/// [listModels] flattens every failure to an empty list, which makes a provider
+/// that is unreachable, unauthorised, or simply not configured indistinguishable
+/// from one that legitimately serves nothing — the `/model` picker silently
+/// showed three Anthropic entries while OpenAI was failing. This keeps the
+/// reason so callers can say *why* a provider contributed nothing.
+class ModelDiscovery {
+  final List<String> models;
+
+  /// Human-readable reason discovery failed, or null when it succeeded.
+  final String? error;
+
+  const ModelDiscovery(this.models) : error = null;
+  const ModelDiscovery.failed(this.error) : models = const [];
+
+  bool get ok => error == null;
+}
+
+extension LLMProviderDiscovery on LLMProvider {
+  /// [listModels] with the failure reason preserved.
+  ///
+  /// Defaults to treating any throw as a failure and any result — including an
+  /// empty one — as a success, which is right for a provider with no discovery
+  /// endpoint. Providers that talk to a real endpoint override this.
+  Future<ModelDiscovery> discoverModels() async {
+    try {
+      return ModelDiscovery(await listModels());
+    } catch (e) {
+      return ModelDiscovery.failed(_shortError(e));
+    }
+  }
+}
+
+/// Trims an exception down to something fit for one terminal line.
+String _shortError(Object e) {
+  var text = e is LLMError ? e.message : e.toString();
+  text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  const limit = 120;
+  return text.length <= limit ? text : '${text.substring(0, limit - 1)}…';
 }

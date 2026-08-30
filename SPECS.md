@@ -110,16 +110,29 @@ The prompt tag reflects the current REPL mode:
 
 | Key | Action |
 |---|---|
-| `↑` / `↓` | Scroll history / navigate suggestion panel |
-| `Tab` | Accept top suggestion |
+| `↑` / `↓` | Scroll input history |
+| `Tab` | Accept the inline completion; press again to cycle |
 | `Shift+Tab` | Cycle REPL mode: normal → plan → accept-edits → normal |
-| `Enter` | Submit input or accept highlighted suggestion |
-| `Escape` | Dismiss suggestion panel |
+| `Enter` | Submit input |
+| `Escape` | Dismiss the inline completion |
 | `Ctrl+C` | Cancel input |
 | `Ctrl+A` / `Ctrl+E` | Jump to line start / end |
 | `Ctrl+U` / `Ctrl+K` | Delete to line start / end |
 | `Ctrl+B` / `Ctrl+F` | Move cursor left / right |
 | `Alt+←` / `Alt+→` | Word-left / word-right |
+
+**Completion is inline, never a panel below the prompt.** The candidate's
+untyped remainder is drawn as dim text after the cursor, on the prompt's own
+line, with a `(2/6 · tab)` counter when several match.
+
+An earlier design drew a separator and suggestion rows *beneath* the prompt with
+real newlines, restoring the cursor afterwards with `\x1b[s` / `\x1b[u`. Near the
+bottom of the terminal those newlines scroll the screen, and a cursor restore
+cannot undo a scroll — so the saved position was stale and every repaint left
+another separator and row in the scrollback, one per keystroke. Writing only to
+the current line removes that failure mode by construction rather than managing
+it, and it is why `Enter` no longer accepts a suggestion (there is no list to
+highlight) and the arrow keys mean history again.
 
 ### 3.2.2 REPL Mode Cycle (Shift+Tab)
 
@@ -462,7 +475,36 @@ completion both build their list from `LLMProvider.listModels()`:
 Model filtering is an **exclusion** list, not an allow-list: `openai_base_url`
 may target Groq, Together, OpenRouter, or LM Studio, whose ids look nothing like
 OpenAI's (`llama-3.3-70b`, `meta-llama/…`, `anthropic/…`). Everything is kept
-except ids naming a non-chat modality (embeddings, audio, image, rerank).
+except ids naming a non-chat modality (embeddings, audio, image, video, rerank).
+
+##### Picker curation
+
+Discovery and *presentation* are separate concerns. `listModels()` always
+returns the complete catalogue; the `/model` picker narrows it, tab completion
+does not.
+
+OpenAI's catalogue carries every generation ever shipped — 69 chat-capable ids
+at the time of writing, 29 of them dated snapshots (`gpt-5.2-2025-12-11`)
+identical to the alias they duplicate. Listing all of them makes the picker a
+scrolling wall rather than a choice, so `OpenAIProvider.curate` drops dated
+snapshots and keeps the three newest versions **per family**. Anthropic's static
+list and Ollama's locally-pulled tags are already short and user-chosen, so
+neither is curated.
+
+Two rules keep curation from hiding working models:
+
+- **Versions rank within a family, never across the catalogue.** `llama-3.3` and
+  `gpt-5.4` are not the same generation; ranking them on one scale dropped
+  whichever family happened to number lower, so a proxy endpoint serving both
+  lost most of its catalogue.
+- **An unparseable id is kept.** No `name-<major>.<minor>` means differently
+  named, not superseded — `o3` and `o4-mini` are current reasoning models, and a
+  proxy catalogue (`claude-sonnet-4`, `mixtral-8x7b-32768`) is largely
+  unparseable. Only a *recognised and superseded* version is curated away.
+
+Curation never restricts what Proxima can run: `--model`, `openai_model` in
+config, `/model <id>`, and tab completion all accept any id the endpoint serves.
+It trims a menu, not the set of usable models.
 
 Context windows are derived per model (`OpenAIProvider.contextWindowFor`) rather
 than advertised as a flat figure: `ContextBuilder` derives the entire token

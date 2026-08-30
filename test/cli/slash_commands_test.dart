@@ -842,4 +842,52 @@ void main() {
       );
     });
   });
+  group('/files reports reads as well as writes', () {
+    test('a read_file record is listed', () async {
+      // Regression: /files matched only write/patch/delete, so it reported
+      // "No files accessed this session" after reading a file — while the
+      // command is documented as "files read or written".
+      session.addTaskRecord(
+        TaskRecord(
+          toolName: 'read_file',
+          args: const {'path': 'pubspec.yaml'},
+          timestamp: DateTime.now(),
+          success: true,
+        ),
+      );
+
+      await handle('/files');
+      expect(renderer.output, contains('pubspec.yaml'));
+      expect(renderer.output, isNot(contains('No files accessed')));
+    });
+
+    test('a later write supersedes an earlier read of the same file', () async {
+      final now = DateTime.now();
+      session.addTaskRecord(
+        TaskRecord(
+          toolName: 'read_file',
+          args: const {'path': 'lib/main.dart'},
+          timestamp: now,
+          success: true,
+        ),
+      );
+      session.addTaskRecord(
+        TaskRecord(
+          toolName: 'write_file',
+          args: const {'path': 'lib/main.dart'},
+          timestamp: now,
+          success: true,
+        ),
+      );
+
+      await handle('/files');
+      expect(renderer.output, contains('modified'));
+      expect(renderer.output, isNot(contains('(read)')));
+    });
+
+    test('still reports nothing when no files were touched', () async {
+      await handle('/files');
+      expect(renderer.output, contains('No files accessed'));
+    });
+  });
 }

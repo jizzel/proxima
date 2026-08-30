@@ -20,7 +20,11 @@ jobs:
 
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          # Pinned, not `stable`: the formatter's output changes between SDK
+          # releases, so an unpinned CI fails `dart format --set-exit-if-changed`
+          # on code that is correctly formatted locally. Matches pubspec's
+          # `^3.11.1`. Raise both this and the pubspec constraint together.
+          sdk: 3.11.1
 
       - name: Install dependencies
         run: dart pub get
@@ -30,6 +34,9 @@ jobs:
 
       - name: Analyze
         run: dart analyze --fatal-infos
+
+      - name: Validate plugin descriptors
+        run: python3 scripts/build_catalog.py --validate-only
 
       - name: Run tests
         run: dart test

@@ -39,7 +39,11 @@ jobs:
 
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          # Pinned, not `stable`: the formatter's output changes between SDK
+          # releases, so an unpinned CI fails `dart format --set-exit-if-changed`
+          # on code that is correctly formatted locally. Matches pubspec's
+          # `^3.11.1`. Raise both this and the pubspec constraint together.
+          sdk: 3.11.1
           architecture: ${{ matrix.dart_arch }}
 
       - name: Install dependencies
@@ -82,6 +86,14 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Package official plugins and generate catalog
+        run: |
+          python3 scripts/build_catalog.py \
+            --plugins-dir plugins/ \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output dist/catalog.json \
+            --zip-dir dist/
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -89,7 +101,7 @@ jobs:
 
       - name: Stage release assets
         run: |
-          mkdir dist
+          mkdir -p dist   # the catalog step may have created it already
           mv artifacts/proxima-macos-arm64/proxima      dist/proxima-macos-arm64
           mv artifacts/proxima-linux-x64/proxima        dist/proxima-linux-x64
           mv artifacts/proxima-windows-x64.exe/proxima.exe dist/proxima-windows-x64.exe
@@ -134,5 +146,7 @@ jobs:
             dist/proxima-macos-arm64
             dist/proxima-linux-x64
             dist/proxima-windows-x64.exe
+            dist/catalog.json
+            dist/plugin-*.zip
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

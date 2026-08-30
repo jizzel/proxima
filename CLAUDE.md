@@ -107,9 +107,22 @@ fetch live, Anthropic returns a static list. Do **not** reintroduce hardcoded
 model consts in the CLI layer; the `/model` picker and tab completion both read
 from the providers so new releases need no code change.
 
+**Plugin distribution:** official plugins install from a catalogue into
+`~/.proxima/plugins/` via `PluginInstaller`. Every download is checksum-verified
+and zip-slip-guarded before anything reaches disk. `proxima plugin ...` is
+intercepted in `bin/proxima.dart` *before* flag parsing — the main parser treats
+the first positional as a natural-language task, so a subcommand added after
+parsing would be sent to the model instead.
+
 ## MVP Checklist
 
 Before a feature is considered complete, verify against the MVP checklist in `SPECS.md` Section 18. All items must pass end-to-end.
+
+**SDK version is pinned in CI** (`ci.yml`, `release.yml`) to match
+`pubspec.yaml`'s `^3.11.1`. `dart format` output changes between SDK releases,
+so an unpinned `sdk: stable` fails `--set-exit-if-changed` on code that formats
+cleanly locally. Raise the pin and the pubspec constraint together, and reformat
+in the same change.
 
 ## Dart Package Dependencies
 

@@ -12,6 +12,7 @@ import '../providers/openai_provider.dart';
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
 import '../renderer/picker_widget.dart';
+import '../tools/plugin/plugin_installer.dart';
 import '../tools/tool_registry.dart';
 
 /// Handles /commands typed in the REPL.
@@ -62,6 +63,7 @@ class SlashCommandHandler {
     void Function(String dir)? onDirSwitch,
     SessionStorage? sessionStorage,
     void Function(String task)? onPlanApproved,
+    PluginInstaller? pluginInstaller,
   }) async {
     final trimmed = input.trim();
     if (!trimmed.startsWith('/')) return false;
@@ -111,6 +113,8 @@ class SlashCommandHandler {
         _printContext(contextWindow);
       case '/tools':
         _printTools(toolRegistry);
+      case '/plugin':
+        await _handlePlugin(rest, pluginInstaller);
       case '/debug':
         _handleDebug(rest, debugState, onDebugSwitch);
       case '/deny':
@@ -336,6 +340,7 @@ Slash commands:
   /files             Show files read/written this session
   /context           Show token budget breakdown
   /tools             List all registered tools with risk levels
+  /plugin [list|install <name>|remove <name>]  Manage official plugins
   /debug [on|off]    Show or toggle debug output
   /deny <tool>       Deny a tool for this session
   /permissions       Show current session permissions
@@ -483,19 +488,27 @@ Slash commands:
   }
 
   void _printFiles(ProximaSession session) {
-    // Collect unique file paths from file-mutating task records.
+    // Collect unique file paths from every file-touching task record.
+    // Reads count too: the command is documented as "files read or written",
+    // and reporting "No files accessed" after a read_file is simply wrong.
     final seen = <String>{};
     final entries = <(String, String)>[];
     for (final record in session.taskHistory) {
       final label = switch (record.toolName) {
         'write_file' || 'patch_file' => '(modified)',
         'delete_file' => '(deleted)',
+        'read_file' => '(read)',
         _ => null,
       };
       if (label != null) {
         final path = record.args['path'] as String?;
-        if (path != null && seen.add(path)) {
+        if (path == null) continue;
+        if (seen.add(path)) {
           entries.add((path, label));
+        } else if (label != '(read)') {
+          // A later write supersedes an earlier read of the same file.
+          final index = entries.indexWhere((e) => e.$1 == path);
+          if (index != -1) entries[index] = (path, label);
         }
       }
     }
@@ -545,6 +558,88 @@ Slash commands:
       buf.write(s[i]);
     }
     return buf.toString();
+  }
+
+  /// `/plugin list | install <name> | remove <name>`.
+  ///
+  /// Shares PluginInstaller with the CLI path so both behave identically.
+  /// Installs take effect on the next session start — the tool registry is
+  /// built once at init.
+  Future<void> _handlePlugin(String rest, PluginInstaller? injected) async {
+    final installer = injected ?? PluginInstaller();
+    final parts = rest
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    final subcommand = parts.isEmpty ? 'list' : parts.first;
+    final target = parts.length > 1 ? parts[1] : null;
+
+    switch (subcommand) {
+      case 'list':
+        await _printPluginList(installer);
+      case 'install':
+        if (target == null) {
+          _renderer.printDim('Usage: /plugin install <name>');
+          return;
+        }
+        try {
+          final entry = await installer.install(target);
+          _renderer.printSuccess('  Installed ${entry.name} ${entry.version}');
+          _renderer.printDim('  Available on the next session start.');
+        } on PluginInstallError catch (e) {
+          _renderer.printError('  ⚠ ${e.message}');
+        }
+      case 'remove':
+        if (target == null) {
+          _renderer.printDim('Usage: /plugin remove <name>');
+          return;
+        }
+        try {
+          final removed = await installer.remove(target);
+          if (removed) {
+            _renderer.printSuccess('  Removed $target');
+          } else {
+            _renderer.printDim('  Plugin "$target" is not installed.');
+          }
+        } on PluginInstallError catch (e) {
+          // remove() rejects a traversing name; an uncaught throw here escapes
+          // the slash handler and ends the session over a typo.
+          _renderer.printError('  ⚠ ${e.message}');
+        }
+      default:
+        _renderer.printDim(
+          'Usage: /plugin [list | install <name> | remove <name>]',
+        );
+    }
+  }
+
+  Future<void> _printPluginList(PluginInstaller installer) async {
+    final installed = await installer.listInstalled();
+    final catalog = await installer.fetchCatalog();
+
+    _renderer.print('');
+    if (catalog == null) {
+      // Offline is not an error — show what the user actually has.
+      if (installed.isEmpty) {
+        _renderer.printDim('  No plugins installed.  (catalogue unavailable)');
+      } else {
+        _renderer.print('  Installed plugins:  (catalogue unavailable)');
+        for (final name in installed) {
+          _renderer.print('    $name');
+        }
+      }
+    } else if (catalog.isEmpty) {
+      _renderer.printDim('  No plugins in the catalogue.');
+    } else {
+      _renderer.print('  Available plugins:');
+      for (final entry in catalog) {
+        final mark = installed.contains(entry.name) ? '✓' : ' ';
+        _renderer.print(
+          '    $mark ${entry.name.padRight(18)} ${dim(entry.description)}',
+        );
+      }
+    }
+    _renderer.print('');
   }
 
   void _printTools(ToolRegistry? registry) {

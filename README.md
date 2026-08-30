@@ -206,6 +206,7 @@ Switch models from inside the REPL:
 | `/permissions` | Show current session permissions (allowed, denied, ignored) |
 | `/dir <path>` | Switch working directory |
 | `/ignore <pattern>` | Exclude a glob pattern from file listings and searches |
+| `/plugin [list\|install <name>\|remove <name>]` | Manage official plugins |
 | `/snapshot` | Save a session snapshot (resume with `--resume <id>`) |
 | `/exit` | Exit Proxima |
 
@@ -373,6 +374,35 @@ to remote code execution. `[i]` prints the install command for you to run.
 `[s]` records the version and never announces it again; a later release is still
 announced. Set `check_for_updates: false` to disable the check entirely. Source
 builds (`--version` reports `dev`) never check.
+
+---
+
+## Plugins
+
+Official plugins install from a published catalogue into `~/.proxima/plugins/`,
+where they are available in every project:
+
+```bash
+proxima plugin list              # what is available
+proxima plugin install word-count
+proxima plugin list --installed
+proxima plugin remove word-count
+proxima plugin update            # update everything installed
+```
+
+The same commands work inside the REPL as `/plugin list`, `/plugin install
+<name>`, and `/plugin remove <name>`. A REPL install takes effect on the next
+session start, since the tool registry is built once at startup.
+
+**Every download is verified.** The SHA-256 is checked against the catalogue
+before anything is written, downloads are HTTPS-only, and any archive entry that
+would write outside the plugin directory aborts the install. If the catalogue
+cannot be reached, `plugin list` still shows what you have installed and the
+REPL is unaffected.
+
+Community plugins that are not in the catalogue can still be dropped into a
+project's `.proxima/plugins/` directory by hand — `plugin remove` never touches
+those.
 
 ---
 

@@ -11,6 +11,7 @@ import '../providers/ollama_provider.dart';
 import '../providers/openai_provider.dart';
 import '../providers/provider_registry.dart';
 import '../tools/ignore_matcher.dart';
+import '../tools/plugin/plugin_installer.dart';
 import '../tools/tool_registry.dart';
 import '../tools/file/delete_file_tool.dart';
 import '../tools/file/read_file_tool.dart';
@@ -85,6 +86,9 @@ class ProximaRepl {
   /// Summaries already generated, keyed by the span of messages they cover, so
   /// repeated compaction of the same history is not paid for repeatedly.
   final Map<String, String> _summaryCache = {};
+
+  /// Shared with the CLI path so both behave identically.
+  final PluginInstaller _pluginInstaller = PluginInstaller();
   bool _updateNoticeShown = false;
 
   ProximaRepl(this._config);
@@ -118,6 +122,10 @@ class ProximaRepl {
                   '';
               return runner.runCritic(
                 tool: toolCall.tool,
+                // The critic was given content with no target, so it reported
+                // changes as "lacking a file path" while the confirm panel
+                // displayed that very path directly above.
+                path: toolCall.args['path'] as String?,
                 diffOrContent: content,
                 model: _activeModel,
               );
@@ -135,9 +143,16 @@ class ProximaRepl {
 
     // Load or create session.
     if (resumeSessionId != null) {
-      _session =
-          await _sessionStorage.load(resumeSessionId) ??
-          ProximaSession.create(_config);
+      final loaded = await _sessionStorage.load(resumeSessionId);
+      if (loaded == null) {
+        // Silently starting a blank session hid typo'd ids and made a user
+        // believe their history had been restored when it had not.
+        _renderer.printError('  ⚠ Session "$resumeSessionId" not found.');
+        _renderer.printDim(
+          '  Sessions are stored in ~/.proxima/sessions/. Starting a new one.',
+        );
+      }
+      _session = loaded ?? ProximaSession.create(_config);
     } else {
       _session = ProximaSession.create(_config);
     }
@@ -494,6 +509,7 @@ class ProximaRepl {
         onDirSwitch: (dir) => _switchDir(dir),
         sessionStorage: _sessionStorage,
         onPlanApproved: (task) => _dispatchPlan(task),
+        pluginInstaller: _pluginInstaller,
       );
 
       if (wasCommand) continue;
@@ -565,6 +581,7 @@ class ProximaRepl {
         '/permissions',
         '/dir',
         '/ignore',
+        '/plugin',
         '/snapshot',
         '/cost',
         '/plan',

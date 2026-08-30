@@ -1,0 +1,17 @@
+{
+  "name": "word_count",
+  "description": "Count words, lines, and characters in a file. Returns a structured summary. Example plugin — demonstrates the Proxima plugin protocol.",
+  "risk_level": "safe",
+  "timeout_seconds": 10,
+  "executable": "run.sh",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Relative path to the file to analyse"
+      }
+    },
+    "required": ["path"]
+  }
+}

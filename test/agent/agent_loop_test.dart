@@ -322,13 +322,15 @@ void main() {
       'find_references',
       'get_imports',
     ];
+    // Repetitive, not merely read-only: the agent revisits the same two
+    // targets. Six *distinct* reads is exploration and must not trip this.
     final calls = List.generate(
       10,
       (i) => LLMResponse(
         body: ToolCallResponse(
           ToolCall(
-            tool: readOnlyTools[i % readOnlyTools.length],
-            args: {'path': 'file_$i.txt'},
+            tool: readOnlyTools[i % 2],
+            args: {'path': 'file_${i % 2}.txt'},
             reasoning: 'reading',
           ),
         ),

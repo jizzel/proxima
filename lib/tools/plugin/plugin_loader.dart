@@ -9,6 +9,24 @@ class PluginLoader {
   /// Discovers and loads plugins from [dirs] relative to [workingDir].
   /// Silently skips invalid/missing directories.
   /// Logs warnings for malformed plugin.json but never throws.
+  /// Resolves a configured plugin directory to an absolute path.
+  ///
+  /// `~` is expanded here rather than left to the shell: config values are read
+  /// from YAML and never pass through one, so a literal `~/.proxima/plugins`
+  /// would otherwise resolve to `<workingDir>/~/.proxima/plugins`.
+  static String resolvePluginDir(String dir, String workingDir) {
+    if (dir == '~' || dir.startsWith('~/')) {
+      final home =
+          Platform.environment['HOME'] ??
+          Platform.environment['USERPROFILE'] ??
+          '';
+      if (home.isNotEmpty) {
+        return p.normalize(p.join(home, dir == '~' ? '' : dir.substring(2)));
+      }
+    }
+    return p.isAbsolute(dir) ? dir : p.join(workingDir, dir);
+  }
+
   static Future<List<ShellPluginTool>> load(
     List<String> dirs,
     String workingDir,
@@ -16,7 +34,7 @@ class PluginLoader {
     final tools = <ShellPluginTool>[];
 
     for (final dir in dirs) {
-      final absDir = p.isAbsolute(dir) ? dir : p.join(workingDir, dir);
+      final absDir = resolvePluginDir(dir, workingDir);
       final pluginsRoot = Directory(absDir);
       if (!await pluginsRoot.exists()) continue;
 

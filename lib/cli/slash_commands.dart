@@ -594,11 +594,17 @@ Slash commands:
           _renderer.printDim('Usage: /plugin remove <name>');
           return;
         }
-        final removed = await installer.remove(target);
-        if (removed) {
-          _renderer.printSuccess('  Removed $target');
-        } else {
-          _renderer.printDim('  Plugin "$target" is not installed.');
+        try {
+          final removed = await installer.remove(target);
+          if (removed) {
+            _renderer.printSuccess('  Removed $target');
+          } else {
+            _renderer.printDim('  Plugin "$target" is not installed.');
+          }
+        } on PluginInstallError catch (e) {
+          // remove() rejects a traversing name; an uncaught throw here escapes
+          // the slash handler and ends the session over a typo.
+          _renderer.printError('  ⚠ ${e.message}');
         }
       default:
         _renderer.printDim(

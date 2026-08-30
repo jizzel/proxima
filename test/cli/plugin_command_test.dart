@@ -191,6 +191,18 @@ void main() {
       expect(await Directory(p.join(tempDir.path, 'gone')).exists(), isFalse);
     });
 
+    test('reports an invalid name instead of crashing', () async {
+      // Regression: remove() rejects a traversing name, and an uncaught throw
+      // escaped the handler — ending the session over a typo.
+      final code = await runPluginCommand(
+        ['remove', '../foo'],
+        installer: installer(),
+        out: capture,
+      );
+      expect(code, equals(1));
+      expect(printed(), contains('Invalid plugin name'));
+    });
+
     test('reports a plugin that is not installed', () async {
       final code = await runPluginCommand(
         ['remove', 'never'],

@@ -351,18 +351,34 @@ class PluginInstaller {
     final executables = <String>{};
 
     // The descriptor names the entry point; that is the authoritative one.
+    // It is attacker-controlled, so it gets the same containment check as an
+    // archive entry — a declared `../../victim.sh` would otherwise chmod +x a
+    // file outside the plugin, and PluginLoader would then follow that same
+    // escaped path and register it under the descriptor's name and risk level.
+    // Rejected rather than skipped: the plugin cannot work, and installing it
+    // anyway leaves that escaped path for the loader to follow.
+    String? declared;
     try {
       final descriptor = File(p.join(staging.path, 'plugin.json'));
       if (await descriptor.exists()) {
         final json =
             jsonDecode(await descriptor.readAsString()) as Map<String, dynamic>;
-        final declared = json['executable'] as String?;
-        if (declared != null && declared.isNotEmpty) {
-          executables.add(declared.replaceAll(r'\', '/'));
-        }
+        declared = json['executable'] as String?;
       }
     } catch (_) {
       // A malformed descriptor is PluginLoader's problem to report, not ours.
+    }
+
+    if (declared != null && declared.isNotEmpty) {
+      final relative = declared.replaceAll(r'\', '/');
+      final resolved = p.normalize(p.join(staging.path, relative));
+      if (!p.isWithin(staging.path, resolved)) {
+        throw PluginInstallError(
+          'Refusing to install "$name": plugin.json declares an executable '
+          'outside the plugin directory ("$declared").',
+        );
+      }
+      executables.add(relative);
     }
 
     // Script extensions as a fallback for helper scripts the descriptor does
@@ -382,7 +398,10 @@ class PluginInstaller {
     }
 
     for (final relative in executables) {
-      final path = p.join(staging.path, relative);
+      // Single choke point: no path reaches chmod without a containment check,
+      // whatever added it.
+      final path = p.normalize(p.join(staging.path, relative));
+      if (!p.isWithin(staging.path, path)) continue;
       if (await File(path).exists()) {
         await Process.run('chmod', ['+x', path]);
       }

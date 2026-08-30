@@ -1886,7 +1886,14 @@ The release workflow addition is roughly:
   raw entry name let `..\..\x` through on POSIX, where `path` treats a
   backslash as an ordinary character
 - **Plugin names must be a single path component**: `plugin remove
-  ../../Documents` otherwise resolved outside the install root and deleted it
+  ../../Documents` otherwise resolved outside the install root and deleted it.
+  Both CLI and `/plugin` report the rejection rather than propagating it — an
+  uncaught throw ended the REPL session over a typo
+- **`plugin.json`'s declared `executable` is contained too**: it is
+  attacker-controlled, so a declared `../../victim.sh` would otherwise
+  `chmod +x` a file outside the plugin, which `PluginLoader` would then follow
+  and register under the descriptor's name, schema, and risk level. Such an
+  archive is rejected outright, not merely skipped
 - **An update never uninstalls on failure**: the existing plugin is moved aside
   and restored if the staged rename fails, rather than deleted up front
 - Downloads are staged in a sibling temp directory and swapped into place, so a

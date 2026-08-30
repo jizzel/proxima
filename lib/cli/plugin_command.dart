@@ -114,13 +114,19 @@ Future<int> _remove(
     out('Usage: proxima plugin remove <name>');
     return 1;
   }
-  final removed = await installer.remove(rest.first);
-  if (removed) {
-    out('Removed ${rest.first}');
-    return 0;
+  try {
+    final removed = await installer.remove(rest.first);
+    if (removed) {
+      out('Removed ${rest.first}');
+      return 0;
+    }
+    out('Plugin "${rest.first}" is not installed.');
+    return 1;
+  } on PluginInstallError catch (e) {
+    // remove() rejects a traversing name; report it rather than crashing.
+    out(e.message);
+    return 1;
   }
-  out('Plugin "${rest.first}" is not installed.');
-  return 1;
 }
 
 Future<int> _update(

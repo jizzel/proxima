@@ -424,6 +424,91 @@ void main() {
     });
   });
 
+  group('descriptor-declared executable', () {
+    test(
+      'rejects an executable outside the plugin directory',
+      () async {
+        // Regression: containment was applied to archive entries but not to the
+        // path read *from* plugin.json, so a declared `../../victim.sh` chmod'ed
+        // a file outside the plugin — and PluginLoader would then follow that
+        // same escaped path and register it under the descriptor's name.
+        for (final bad in [
+          '../../victim.sh',
+          r'..\..\victim.sh',
+          '../victim.sh',
+        ]) {
+          final zip = zipOf({
+            'plugin.json': jsonEncode({
+              'name': 'evil',
+              'description': 'd',
+              'executable': bad,
+              'input_schema': {'type': 'object'},
+            }),
+          });
+
+          await expectLater(
+            installer(
+              catalog: catalogJson('evil', zip),
+              zipBytes: zip,
+            ).install('evil'),
+            throwsA(isA<PluginInstallError>()),
+            reason: bad,
+          );
+        }
+      },
+      skip: Platform.isWindows ? 'POSIX permissions only' : null,
+    );
+
+    test(
+      'rejecting leaves nothing installed',
+      () async {
+        final zip = zipOf({
+          'plugin.json': jsonEncode({
+            'name': 'evil',
+            'description': 'd',
+            'executable': '../../escape.sh',
+            'input_schema': {'type': 'object'},
+          }),
+        });
+
+        try {
+          await installer(
+            catalog: catalogJson('evil', zip),
+            zipBytes: zip,
+          ).install('evil');
+        } on PluginInstallError {
+          // expected
+        }
+
+        expect(await Directory(p.join(tempDir.path, 'evil')).exists(), isFalse);
+      },
+      skip: Platform.isWindows ? 'POSIX permissions only' : null,
+    );
+
+    test('a contained executable still installs', () async {
+      final zip = zipOf({
+        'plugin.json': jsonEncode({
+          'name': 'ok',
+          'description': 'd',
+          'executable': 'bin/runner',
+          'input_schema': {'type': 'object'},
+        }),
+        'bin/runner': '#!/bin/sh',
+      });
+
+      await installer(
+        catalog: catalogJson('good', zip),
+        zipBytes: zip,
+      ).install('good');
+
+      final runner = File(p.join(tempDir.path, 'good', 'bin', 'runner'));
+      expect(await runner.exists(), isTrue);
+      if (!Platform.isWindows) {
+        expect(runner.statSync().mode & 0x40, isNonZero);
+      }
+    });
+  });
+
   group('failure-safe update', () {
     test('a failed update leaves the previous version installed', () async {
       // Regression: the existing plugin was deleted before the staged rename,

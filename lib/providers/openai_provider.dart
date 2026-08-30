@@ -259,21 +259,149 @@ class OpenAIProvider implements LLMProvider {
       );
       if (response.statusCode != 200) return [];
 
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final data = json['data'] as List<dynamic>? ?? [];
-      final ids =
-          data
-              .map((m) => (m as Map<String, dynamic>)['id'] as String? ?? '')
-              .where(_isChatModel)
-              .toList()
-            ..sort((a, b) {
-              final rank = _modelRank(a).compareTo(_modelRank(b));
-              return rank != 0 ? rank : a.compareTo(b);
-            });
-      return ids;
+      return _parseModelList(response.body);
     } catch (_) {
       return [];
     }
+  }
+
+  /// Narrows the catalogue to the newest few generations for the `/model`
+  /// picker.
+  ///
+  /// OpenAI's catalogue carries every generation ever shipped — 69 chat-capable
+  /// ids at the time of writing, of which 29 are dated snapshots duplicating an
+  /// alias they are identical to. Presenting all of them makes the picker a
+  /// scrolling wall rather than a choice, so this keeps only [_keptGenerations]
+  /// version families.
+  ///
+  /// Nothing is made unreachable: `--model openai/gpt-4o`, the config file, and
+  /// `/model <id>` all accept any id the endpoint serves. Tab completion still
+  /// offers the full [listModels] list.
+  ///
+  /// Falls back to the full list whenever curation cannot be applied
+  /// meaningfully — an endpoint whose ids carry no `name-<major>.<minor>`
+  /// version (Groq, LM Studio, OpenRouter) would otherwise yield an empty
+  /// picker.
+  /// Decodes and orders the ids from a `/models` body.
+  static List<String> _parseModelList(String body) {
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    final data = json['data'] as List<dynamic>? ?? [];
+    return data
+        .map((m) => (m as Map<String, dynamic>)['id'] as String? ?? '')
+        .where(_isChatModel)
+        .toList()
+      ..sort((a, b) {
+        final rank = _modelRank(a).compareTo(_modelRank(b));
+        return rank != 0 ? rank : a.compareTo(b);
+      });
+  }
+
+  /// [listModels] with the reason for a failure preserved, so the picker can
+  /// say why OpenAI contributed nothing instead of silently showing a short
+  /// list. A 401 here is by far the most common cause and used to be invisible.
+  Future<ModelDiscovery> discoverModels() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/models'),
+        headers: _headers(),
+      );
+      if (response.statusCode != 200) {
+        return ModelDiscovery.failed(
+          _discoveryError(response.statusCode, response.body),
+        );
+      }
+      return ModelDiscovery(_parseModelList(response.body));
+    } catch (e) {
+      return ModelDiscovery.failed(transportMessage(e, name, _baseUrl));
+    }
+  }
+
+  /// A one-line reason for a non-200 from `/models`.
+  static String _discoveryError(int statusCode, String body) {
+    final apiMessage = _errorMessage(body);
+    return switch (statusCode) {
+      401 => 'invalid API key (401)',
+      403 => 'access denied (403)',
+      429 => 'rate limited (429)',
+      _ =>
+        apiMessage == null
+            ? 'HTTP $statusCode'
+            : 'HTTP $statusCode — $apiMessage',
+    };
+  }
+
+  /// Pulls `error.message` out of an API error body, if present.
+  static String? _errorMessage(String body) {
+    try {
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final error = json['error'];
+      if (error is Map<String, dynamic>) return error['message'] as String?;
+    } catch (_) {
+      // Not JSON — the status code alone is the whole story.
+    }
+    return null;
+  }
+
+  /// Fetches the catalogue already narrowed for the `/model` picker.
+  Future<List<String>> listCuratedModels() async => curate(await listModels());
+
+  /// Narrows an already-fetched model list. A pure function so the REPL can
+  /// curate its cached list without a second network round-trip — the cache is
+  /// kept complete because tab completion still resolves older ids.
+  static List<String> curate(List<String> all) {
+    final undated = all.where((id) => !_datedSnapshot.hasMatch(id)).toList();
+    if (undated.isEmpty) return all;
+
+    // Rank versions *within* each family, never across the catalogue. A single
+    // global ordering compared unrelated families — `llama-3.3` and `gpt-5.4`
+    // are not the same generation, and ranking them together dropped whichever
+    // family numbered lower.
+    final newestPerFamily = <String, List<double>>{};
+    for (final id in undated) {
+      final parsed = _parseFamily(id);
+      if (parsed == null) continue;
+      (newestPerFamily[parsed.family] ??= []).add(parsed.version);
+    }
+    final keep = <String, Set<double>>{};
+    for (final entry in newestPerFamily.entries) {
+      final versions = entry.value.toSet().toList()..sort();
+      keep[entry.key] = versions.reversed.take(_keptGenerations).toSet();
+    }
+
+    final curated = undated.where((id) {
+      final parsed = _parseFamily(id);
+      // An id with no parseable `name-<major>.<minor>` is not an old
+      // generation, just a differently-named one — `o3` and `o4-mini` are
+      // current reasoning models. Dropping these would hide working models, so
+      // only a *recognised but superseded* version is curated away.
+      if (parsed == null) return true;
+      return keep[parsed.family]?.contains(parsed.version) ?? true;
+    }).toList();
+
+    return curated.isEmpty ? all : curated;
+  }
+
+  /// How many versions of each family the picker shows. Three covers the
+  /// current generation plus the two before it.
+  static const _keptGenerations = 3;
+
+  /// A pinned snapshot such as `gpt-5.2-2025-12-11`, which behaves identically
+  /// to the alias it duplicates.
+  static final _datedSnapshot = RegExp(r'-20\d\d-\d\d-\d\d$');
+
+  /// Splits `gpt-5.4-mini` into its family (`gpt`) and a sortable version
+  /// (5.04), or null when the id carries no recognisable version.
+  ///
+  /// The minor part is scaled by 100 rather than 10 so `gpt-5.10` sorts above
+  /// `gpt-5.9` instead of tying with `gpt-5.1`.
+  static ({String family, double version})? _parseFamily(String id) {
+    final match = RegExp(
+      r'^([a-z]+)-(\d+)(?:\.(\d+))?',
+    ).firstMatch(id.toLowerCase());
+    if (match == null) return null;
+    final major = int.parse(match.group(2)!);
+    final minor = int.parse(match.group(3) ?? '0');
+    return (family: match.group(1)!, version: major + minor / 100.0);
   }
 
   /// Filters the raw model catalogue down to chat-capable models.
@@ -307,6 +435,11 @@ class OpenAIProvider implements LLMProvider {
       'stable-diffusion',
       'flux',
       'guard',
+      // Video generation — listed in the catalogue but cannot serve chat, so
+      // offering it hands the user a model that fails on first use.
+      'sora',
+      'veo',
+      'runway',
     ];
     if (excludedSubstrings.any(lower.contains)) return false;
 

@@ -153,7 +153,12 @@ proxima --model openai/gpt-4o
 ```
 
 Available models are discovered live from the API, so newly released models
-appear in `/model` automatically.
+appear in `/model` automatically. The picker shows the current generations; any
+other model the API serves still works by name:
+
+```bash
+proxima --model openai/gpt-4o        # not in the picker, still runs
+```
 
 **OpenAI-compatible endpoints.** Set `openai_base_url` (or `OPENAI_BASE_URL`) to
 point the same provider at Groq, Together, OpenRouter, or LM Studio:

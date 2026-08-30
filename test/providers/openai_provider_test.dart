@@ -574,6 +574,15 @@ void main() {
       );
     });
 
+    test('excludes video-generation models', () async {
+      // Regression: `sora-2` appeared in the /model picker but cannot serve
+      // chat/completions, so selecting it failed on first use.
+      final provider = modelsProvider('''
+{"data":[{"id":"sora-2"},{"id":"sora-2-pro"},{"id":"gpt-4o"}]}
+''');
+      expect(await provider.listModels(), equals(['gpt-4o']));
+    });
+
     test('returns empty on a non-200 rather than throwing', () async {
       final provider = modelsProvider('{"error":{}}', statusCode: 401);
       expect(await provider.listModels(), isEmpty);
@@ -582,6 +591,212 @@ void main() {
     test('returns empty on a malformed body rather than throwing', () async {
       final provider = modelsProvider('not json');
       expect(await provider.listModels(), isEmpty);
+    });
+  });
+
+  group('OpenAIProvider discovery errors', () {
+    OpenAIProvider provider(String body, int statusCode) => OpenAIProvider(
+      model: 'gpt-4o',
+      apiKey: 'test-key',
+      client: MockClient((request) async => http.Response(body, statusCode)),
+    );
+
+    // Regression: every failure flattened to an empty list, so a 401 was
+    // indistinguishable from a provider that legitimately serves nothing —
+    // the picker showed a short list with no explanation.
+    test('a 401 reports an invalid key rather than an empty list', () async {
+      final result = await provider(
+        '{"error":{"message":"bad"}}',
+        401,
+      ).discoverModels();
+      expect(result.ok, isFalse);
+      expect(result.error, contains('401'));
+      expect(result.models, isEmpty);
+    });
+
+    test('a 429 reports rate limiting', () async {
+      final result = await provider('{}', 429).discoverModels();
+      expect(result.error, contains('rate limited'));
+    });
+
+    test('an unrecognised status carries the API message', () async {
+      final result = await provider(
+        '{"error":{"message":"server on fire"}}',
+        500,
+      ).discoverModels();
+      expect(result.error, contains('500'));
+      expect(result.error, contains('server on fire'));
+    });
+
+    test('a success reports ok with the parsed ids', () async {
+      final result = await provider(
+        jsonEncode({
+          'data': [
+            {'id': 'gpt-5.6-sol'},
+            {'id': 'text-embedding-3-large'},
+          ],
+        }),
+        200,
+      ).discoverModels();
+      expect(result.ok, isTrue);
+      expect(result.models, equals(['gpt-5.6-sol']));
+    });
+
+    test('an empty catalogue is a success, not a failure', () async {
+      final result = await provider('{"data":[]}', 200).discoverModels();
+      expect(result.ok, isTrue);
+      expect(result.models, isEmpty);
+    });
+  });
+
+  group('OpenAIProvider model curation', () {
+    OpenAIProvider modelsProvider(String body) => OpenAIProvider(
+      model: 'gpt-4o',
+      apiKey: 'test-key',
+      client: MockClient(
+        (request) async => http.Response(
+          body,
+          200,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+    );
+
+    test('keeps only the three newest version families', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.6-sol',
+        'gpt-5.5',
+        'gpt-5.4-mini',
+        'gpt-5.1',
+        'gpt-5',
+        'gpt-4.1',
+        'gpt-4o',
+      ]);
+      expect(curated, equals(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4-mini']));
+    });
+
+    test('drops dated snapshots that duplicate their alias', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.6-sol',
+        'gpt-5.6-sol-2026-08-01',
+        'gpt-5.5-2025-12-11',
+      ]);
+      expect(curated, equals(['gpt-5.6-sol']));
+    });
+
+    test('keeps every size tier within a kept family', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.4',
+        'gpt-5.4-mini',
+        'gpt-5.4-nano',
+        'gpt-5.4-pro',
+      ]);
+      expect(curated, hasLength(4));
+    });
+
+    // A minor scaled by 10 would tie 5.10 with 5.1 and drop a current model.
+    test('orders minor versions numerically, not lexically', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.10',
+        'gpt-5.9',
+        'gpt-5.8',
+        'gpt-5.1',
+      ]);
+      expect(curated, equals(['gpt-5.10', 'gpt-5.9', 'gpt-5.8']));
+    });
+
+    // Regression: the predicate required a parsed version, so any id without
+    // one was dropped whenever the catalogue held at least one that parsed.
+    // o3 and o4-mini are current reasoning models, not old generations.
+    test('keeps reasoning models alongside versioned gpt ids', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.6-sol',
+        'gpt-5.5',
+        'gpt-5.4',
+        'o3',
+        'o3-mini',
+        'o4-mini',
+      ]);
+      expect(curated, contains('o3'));
+      expect(curated, contains('o4-mini'));
+      expect(curated, contains('gpt-5.6-sol'));
+    });
+
+    // The same bug on a proxy endpoint: one gpt-* id made every differently
+    // named model disappear from the picker.
+    test('keeps unversioned ids in a mixed proxy catalogue', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.6-sol',
+        'gpt-5.5',
+        'gpt-5.4',
+        'llama-3.3-70b-versatile',
+        'claude-sonnet-4',
+        'mixtral-8x7b-32768',
+      ]);
+      expect(curated, contains('claude-sonnet-4'));
+      expect(curated, contains('llama-3.3-70b-versatile'));
+      expect(curated, contains('mixtral-8x7b-32768'));
+    });
+
+    // Only a recognised *and* superseded version is curated away.
+    test('still drops superseded versioned families', () {
+      final curated = OpenAIProvider.curate([
+        'gpt-5.6-sol',
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-5.1',
+        'gpt-4o',
+        'o3',
+      ]);
+      expect(curated, isNot(contains('gpt-5.1')));
+      expect(curated, isNot(contains('gpt-4o')));
+      expect(curated, contains('o3'));
+    });
+
+    // baseUrl may point at any OpenAI-compatible endpoint; curating those ids
+    // to nothing would leave the picker empty against a working endpoint.
+    test('passes through ids that carry no recognisable version', () {
+      final groq = ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'];
+      expect(OpenAIProvider.curate(groq), equals(groq));
+
+      final openrouter = [
+        'anthropic/claude-sonnet-4',
+        'meta-llama/Llama-3-70b',
+      ];
+      expect(OpenAIProvider.curate(openrouter), equals(openrouter));
+    });
+
+    test(
+      'returns the full list rather than nothing when all ids are dated',
+      () {
+        final dated = ['gpt-5.6-2026-08-01', 'gpt-5.5-2025-12-11'];
+        expect(OpenAIProvider.curate(dated), equals(dated));
+      },
+    );
+
+    test('handles an empty list', () {
+      expect(OpenAIProvider.curate([]), isEmpty);
+    });
+
+    test('listCuratedModels narrows what listModels returns', () async {
+      final provider = modelsProvider(
+        jsonEncode({
+          'data': [
+            {'id': 'gpt-5.6-sol'},
+            {'id': 'gpt-5.5'},
+            {'id': 'gpt-5.4'},
+            {'id': 'gpt-4o'},
+            {'id': 'gpt-3.5-turbo'},
+          ],
+        }),
+      );
+      expect(await provider.listModels(), hasLength(5));
+      // Curation selects which models appear; it preserves the order
+      // listModels established (rank, then alphabetical within a rank).
+      expect(
+        await provider.listCuratedModels(),
+        equals(['gpt-5.4', 'gpt-5.5', 'gpt-5.6-sol']),
+      );
     });
   });
   group('OpenAIProvider unsupported-parameter retry', () {

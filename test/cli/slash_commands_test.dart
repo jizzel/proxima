@@ -209,6 +209,23 @@ void main() {
 
   // ── /model ─────────────────────────────────────────────────────────────────
 
+  // Regression: the picker listed only what discovery returned, so when a
+  // provider's discovery failed the *running* model was absent from its own
+  // picker and could not be re-selected after switching away.
+  test('9a. /model always includes the active model', () async {
+    final session = makeSession(model: 'openai/gpt-5.6-sol');
+    await handler.handle(
+      '/model',
+      session,
+      () {},
+      (m) {},
+      () {},
+      ollamaModels: [],
+      openaiModels: [], // discovery contributed nothing
+    );
+    expect(renderer.output, contains('openai/gpt-5.6-sol'));
+  });
+
   test(
     '9. /model (no arg) falls back to plain list in non-TTY and returns true',
     () async {
@@ -888,6 +905,65 @@ void main() {
     test('still reports nothing when no files were touched', () async {
       await handle('/files');
       expect(renderer.output, contains('No files accessed'));
+    });
+  });
+  group('model picker window', () {
+    // Regression: the picker redrew by moving the cursor up by the *full* list
+    // length. Once that exceeded the terminal height the cursor could not
+    // reach the top, so every keypress appended another copy of the list —
+    // with ~90 models the picker filled the scrollback.
+    //
+    // These call the real function rather than restating its arithmetic: an
+    // earlier copy of the formula here drifted from the implementation and
+    // asserted `window + 2 <= height + 2`, which tolerates two rows of
+    // overflow and so could never fail.
+    int windowFor(int height, int modelCount) =>
+        SlashCommandHandler.pickerWindowFor(height, modelCount);
+
+    test('the drawn window always fits the terminal', () {
+      // The picker draws a header above the list and a hint below it, so it
+      // occupies window + 2 rows and that must fit within the height.
+      for (
+        var height = SlashCommandHandler.minPickerHeight;
+        height <= 200;
+        height++
+      ) {
+        for (final count in [1, 3, 20, 69, 200]) {
+          final window = windowFor(height, count);
+          expect(
+            window + 2,
+            lessThanOrEqualTo(height),
+            reason: 'overflows at height $height with $count models',
+          );
+          expect(window, greaterThan(0), reason: 'height $height');
+        }
+      }
+    });
+
+    // A fixed six-row floor drew eight rows on a six-row pane, recreating the
+    // corruption on split panes and small terminals.
+    test('short terminals get a window derived from the height', () {
+      expect(windowFor(6, 69), equals(3));
+      expect(windowFor(5, 69), equals(2));
+      expect(windowFor(4, 69), equals(1));
+      expect(windowFor(3, 69), equals(1));
+    });
+
+    test('a short list is shown in full', () {
+      expect(windowFor(24, 5), equals(5));
+    });
+
+    test('a long list is capped, not expanded', () {
+      expect(windowFor(24, 200), equals(20));
+      expect(windowFor(24, 200), lessThan(200));
+    });
+
+    // Below three rows a header, one row, and the hint cannot coexist, so the
+    // picker prints the plain list instead of drawing an impossible frame.
+    test('the fallback threshold leaves room for chrome plus one row', () {
+      expect(SlashCommandHandler.minPickerHeight, greaterThanOrEqualTo(3));
+      final h = SlashCommandHandler.minPickerHeight;
+      expect(windowFor(h, 69) + 2, lessThanOrEqualTo(h));
     });
   });
 }

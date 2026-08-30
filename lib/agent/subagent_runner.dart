@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/secret_masker.dart';
 import '../core/types.dart';
 import '../providers/provider_interface.dart';
 
@@ -65,6 +66,14 @@ class SubagentResult {
     required this.isError,
     this.errorMessage,
   });
+}
+
+/// A summary plus the tokens its generation cost.
+class SummaryResult {
+  final String text;
+  final TokenUsage usage;
+
+  const SummaryResult({required this.text, required this.usage});
 }
 
 class SubagentRunner {
@@ -148,6 +157,101 @@ class SubagentRunner {
       return CriticResult.approve();
     }
   }
+
+  /// Summarises a run of messages that compaction is about to discard.
+  ///
+  /// Returns null on any failure — an empty response, a provider error, a
+  /// blank summary. The caller then falls back to plain truncation, so a
+  /// summarisation failure costs context but never the turn.
+  Future<SummaryResult?> runSummarizer({
+    required List<Message> messages,
+    required String model,
+    int maxTokens = 512,
+    int maxTranscriptChars = 24000,
+  }) async {
+    if (messages.isEmpty) return null;
+
+    // Cap the *whole* transcript, not just each message: a long session can
+    // discard hundreds of messages at once, and an unbounded join would exceed
+    // the model's context window or cost far more than the context it saves —
+    // failing precisely when history is largest and summarising matters most.
+    // The newest messages are kept, since they are the most relevant to what
+    // happens next.
+    final selected = <Message>[];
+    var budget = maxTranscriptChars;
+    for (final m in messages.reversed) {
+      final cost = m.content.length.clamp(0, 2000) + 32;
+      if (budget - cost < 0 && selected.isNotEmpty) break;
+      selected.insert(0, m);
+      budget -= cost;
+    }
+
+    final transcript = selected
+        .map((m) {
+          final who = switch (m.role) {
+            MessageRole.user => 'User',
+            MessageRole.assistant => 'Assistant',
+            MessageRole.tool => 'Tool(${m.toolName ?? "?"})',
+            MessageRole.system => 'System',
+          };
+          // Cap each message so one huge tool result cannot crowd out the rest.
+          var body = m.content.length > 2000
+              ? '${m.content.substring(0, 2000)}…'
+              : m.content;
+
+          // An assistant tool call keeps its arguments in toolInput and often
+          // has empty content, and a read_file *result* is numbered file text
+          // with no path in it — so without this the summariser cannot name
+          // the files that were read, which is the main thing it should
+          // preserve. Masked, since these reach an external provider.
+          if (m.toolInput != null && m.toolInput!.isNotEmpty) {
+            final args = jsonEncode(maskSecrets(m.toolInput!));
+            final shown = args.length > 300
+                ? '${args.substring(0, 300)}…'
+                : args;
+            body = body.isEmpty ? shown : '$body $shown';
+          }
+          return '$who: $body';
+        })
+        .join('\n\n');
+
+    final request = CompletionRequest(
+      model: model,
+      systemPrompt: _summarizerPrompt,
+      messages: [Message(role: MessageRole.user, content: transcript)],
+      tools: const [],
+      maxTokens: maxTokens,
+      temperature: 0.0,
+      stream: false,
+    );
+
+    try {
+      final response = await _provider.complete(request);
+      final body = response.body;
+      if (body is! FinalResponse) return null;
+      final text = body.text.trim();
+      if (text.isEmpty) return null;
+      // Usage is returned so the caller can record it: a summarisation request
+      // costs real tokens, and omitting it under-reports the session total.
+      return SummaryResult(text: text, usage: response.usage);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static const _summarizerPrompt = '''
+You are summarising an earlier portion of a coding session that is about to be
+dropped from context. Preserve only what a developer would need to continue the
+work without re-reading it.
+
+Write 3-5 terse bullets covering, where applicable:
+- files read or modified (exact paths)
+- changes made and why
+- decisions reached or constraints discovered
+- anything still unresolved
+
+Omit pleasantries, restated instructions, and tool mechanics. Output only the
+bullets — no preamble, no heading.''';
 
   static CriticResult _parseCriticResponse(String text) {
     try {

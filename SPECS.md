@@ -1592,7 +1592,26 @@ A pre-commit review subagent fires before the permission prompt on `write_file` 
 
 ### 19.3 Context Summarization + File Cache
 
-**LLM-based summarization:** When compaction is about to drop messages, first summarize the dropped segment (3–5 bullets; files read, changes made, decisions reached). Result injected as a pinned `Message`. Falls back to existing truncation when provider is null. *(Planned — not yet implemented)*
+**LLM-based summarization ✓ Implemented:** `SubagentRunner.runSummarizer()` summarises the run of messages Pass 2 (`truncateHistory`) is about to discard — 3–5 bullets covering files touched, changes made, and decisions reached — and `Compaction.compact()` pins the result to the front of the retained history.
+
+Cost is bounded and opt-out: the call fires **only** when messages would otherwise be dropped, so an under-budget turn spends nothing. `max_tokens` is capped at 512 and no tools are sent. The transcript is bounded twice — each source message is clipped to 2000 characters, *and* the joined transcript to 24000 characters, keeping the newest messages. Bounding only per-message would let a session that discards hundreds of messages build an unbounded prompt, busting the context window exactly when summarising matters most.
+
+The summary is generated at most once per distinct span: the agent loop rebuilds
+context on every iteration from the same session history, so without caching a
+10-iteration turn would pay for 10 near-identical summaries. `runSummarizer`
+returns the request's `TokenUsage`, which the caller records — a summarisation
+request costs real tokens and would otherwise be missing from the session totals.
+
+The transcript includes each message's `toolInput`, secret-masked: an assistant
+tool-call message keeps its path there and often has empty content, and a
+`read_file` result is numbered file text containing no path — so without it the
+summariser cannot name the files that were read.
+
+Budget is reserved before truncation, not after: `truncateHistory` trims to `conversationHistory - 512`, so prepending the summary cannot push the retained history back over its allocation. The reserve applies **only** when truncation is actually required — a history that already fits is left alone, with no discarded messages and no paid summary. A summary that overruns its reserve is clipped (the prefix counts against it too), and relevance filtering runs *before* injection so the summary cannot be filtered out in favour of messages it stands in for.
+
+Degrades in every failure mode — no provider, a provider error, a non-final response, a blank summary, or a throwing summariser all fall back to the plain truncation that was already applied. A summarisation failure costs context, never the turn.
+
+`Compaction.compact()` is now `async` and takes an optional `HistorySummarizer`; with none supplied its behaviour is byte-identical to before. Disable with `summarize_on_compact: false`.
 
 **File cache deduplication ✓ Implemented:** `Map<String, String> fileCache` in `ProximaSession`. Agent loop populates it after every successful `read_file` call. `Compaction.deduplicateFileReads()` (Pass 0) replaces all but the most recent read of each path with `'[File already in context — see most recent read above]'`. `Compaction.compact()` accepts `fileCache` and runs deduplication first. Estimated savings: 15–30% in file-heavy sessions. 11 tests.
 

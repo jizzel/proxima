@@ -11,8 +11,16 @@ class ContextBuilder {
   final ToolRegistry _toolRegistry;
   final int _contextWindow;
 
-  ContextBuilder(this._toolRegistry, {int contextWindow = 200000})
-    : _contextWindow = contextWindow;
+  /// Summarises history that compaction has to drop. Optional: without it,
+  /// compaction truncates exactly as before.
+  final HistorySummarizer? _summarizer;
+
+  ContextBuilder(
+    this._toolRegistry, {
+    int contextWindow = 200000,
+    HistorySummarizer? summarizer,
+  }) : _contextWindow = contextWindow,
+       _summarizer = summarizer;
 
   Future<CompletionRequest> build(
     ProximaSession session,
@@ -43,11 +51,12 @@ class ContextBuilder {
             ?.content ??
         '';
 
-    final compactedHistory = Compaction.compact(
+    final compactedHistory = await Compaction.compact(
       session.history,
       budget,
       latestUserMessage,
       fileCache: session.fileCache,
+      summarizer: _summarizer,
     );
 
     return CompletionRequest(

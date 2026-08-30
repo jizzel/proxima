@@ -101,19 +101,8 @@ class OpenAIProvider implements LLMProvider {
     if (response.statusCode != 200) {
       // The API names the parameter it will not accept; drop it and retry once
       // rather than trying to predict per-model support from the name.
-      final unsupported = _unsupportedParameter(
-        response.statusCode,
-        response.body,
-      );
-      final needsEffortNone = _needsReasoningEffortNone(
-        response.statusCode,
-        response.body,
-      );
-      if ((unsupported != null && body.containsKey(unsupported)) ||
-          needsEffortNone) {
-        final retryBody = Map<String, dynamic>.from(body);
-        if (unsupported != null) retryBody.remove(unsupported);
-        if (needsEffortNone) retryBody['reasoning_effort'] = 'none';
+      final retryBody = _adjustedBody(body, response.statusCode, response.body);
+      if (retryBody != null) {
         final retry = await transportPost(
           _client,
           Uri.parse('$_baseUrl/chat/completions'),
@@ -142,7 +131,7 @@ class OpenAIProvider implements LLMProvider {
           ..headers.addAll(_headers())
           ..body = jsonEncode(body);
 
-    final http.StreamedResponse response;
+    http.StreamedResponse response;
     try {
       response = await _client.send(httpRequest);
     } on Exception catch (e) {
@@ -151,10 +140,24 @@ class OpenAIProvider implements LLMProvider {
 
     if (response.statusCode != 200) {
       final errorBody = await response.stream.bytesToString();
-      // The agent loop re-issues via complete() when the stream fails, and
-      // complete() performs the unsupported-parameter retry — so surfacing the
-      // error here is enough; no need to duplicate the retry on this path.
-      throw _parseError(response.statusCode, errorBody);
+      // Retry here rather than leaning on the agent loop's complete() fallback:
+      // that fallback works, but prints a debug warning on *every* turn for a
+      // model with an unsupported parameter, which reads as a broken session.
+      final retryBody = _adjustedBody(body, response.statusCode, errorBody);
+      if (retryBody == null) {
+        throw _parseError(response.statusCode, errorBody);
+      }
+      final retryRequest =
+          http.Request('POST', Uri.parse('$_baseUrl/chat/completions'))
+            ..headers.addAll(_headers())
+            ..body = jsonEncode(retryBody);
+      response = await _client.send(retryRequest);
+      if (response.statusCode != 200) {
+        throw _parseError(
+          response.statusCode,
+          await response.stream.bytesToString(),
+        );
+      }
     }
 
     final buffer = StringBuffer();
@@ -344,6 +347,25 @@ class OpenAIProvider implements LLMProvider {
     if (lower.startsWith('gpt-4o')) return 3;
     if (lower.startsWith('gpt-4')) return 4;
     return 5;
+  }
+
+  /// Returns a request body adjusted for whatever a 400 says is unsupported,
+  /// or null when the error is not one we know how to work around.
+  static Map<String, dynamic>? _adjustedBody(
+    Map<String, dynamic> body,
+    int statusCode,
+    String errorBody,
+  ) {
+    final unsupported = _unsupportedParameter(statusCode, errorBody);
+    final needsEffortNone = _needsReasoningEffortNone(statusCode, errorBody);
+    if ((unsupported == null || !body.containsKey(unsupported)) &&
+        !needsEffortNone) {
+      return null;
+    }
+    final adjusted = Map<String, dynamic>.from(body);
+    if (unsupported != null) adjusted.remove(unsupported);
+    if (needsEffortNone) adjusted['reasoning_effort'] = 'none';
+    return adjusted;
   }
 
   /// Extracts the request parameter that a 400 says is unsupported, if any.

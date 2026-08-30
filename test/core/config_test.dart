@@ -82,4 +82,24 @@ void main() {
       expect(result, contains('max_iterations: 5'));
     });
   });
+  group('summarize_on_compact', () {
+    test('the documented opt-out is actually parsed', () async {
+      // Regression: the field existed on ProximaConfig but _mergeYaml never
+      // read the key, so the advertised opt-out silently did nothing.
+      final home = await Directory.systemTemp.createTemp('proxima_sum_cfg_');
+      Directory(p.join(home.path, '.proxima')).createSync(recursive: true);
+      await File(
+        p.join(home.path, '.proxima', 'config.yaml'),
+      ).writeAsString('summarize_on_compact: false\n');
+
+      final config = await ProximaConfig.load(workingDir: home.path);
+      expect(config.summarizeOnCompact, isFalse);
+
+      await home.delete(recursive: true);
+    });
+
+    test('defaults to enabled', () {
+      expect(ProximaConfig.defaults().summarizeOnCompact, isTrue);
+    });
+  });
 }

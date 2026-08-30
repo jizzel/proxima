@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import '../core/config.dart';
+import '../core/cost_calculator.dart';
 import '../core/session.dart';
 import '../core/session_storage.dart';
 import '../core/update_checker.dart';
@@ -37,6 +38,7 @@ import '../permissions/audit_log.dart';
 import '../permissions/permission_gate.dart';
 import '../context/context_builder.dart';
 import '../agent/agent_loop.dart';
+import '../agent/subagent_runner.dart';
 import '../agent/subagent_runner.dart' show SubagentRunner;
 import '../renderer/renderer.dart';
 import '../renderer/ansi_helpers.dart';
@@ -79,6 +81,10 @@ class ProximaRepl {
   List<String> _openaiModels = [];
   List<String> _anthropicModels = [];
   Future<UpdateInfo?>? _updateCheck;
+
+  /// Summaries already generated, keyed by the span of messages they cover, so
+  /// repeated compaction of the same history is not paid for repeatedly.
+  final Map<String, String> _summaryCache = {};
   bool _updateNoticeShown = false;
 
   ProximaRepl(this._config);
@@ -316,6 +322,33 @@ class ProximaRepl {
     final contextBuilder = ContextBuilder(
       _toolRegistry,
       contextWindow: _contextWindow,
+      // Summarise history that compaction has to drop, rather than losing it
+      // outright. Uses the active model; a failure falls back to truncation.
+      summarizer: _config.summarizeOnCompact
+          ? (dropped) async {
+              // Cache per session: the agent loop rebuilds context on every
+              // iteration from the same history, so without this a
+              // 10-iteration turn pays for 10 near-identical summaries.
+              final key = _summaryCacheKey(dropped);
+              final cached = _summaryCache[key];
+              if (cached != null) return cached;
+
+              final result = await SubagentRunner(
+                provider: provider,
+              ).runSummarizer(messages: dropped, model: _activeModel);
+              if (result == null) return null;
+
+              // A summarisation request costs real tokens; recording it keeps
+              // the session usage and cost report honest.
+              _session.recordUsage(result.usage);
+              _session.recordCost(
+                CostCalculator.compute(_activeModel, result.usage),
+              );
+
+              _summaryCache[key] = result.text;
+              return result.text;
+            }
+          : null,
     );
 
     _agentLoop = AgentLoop(
@@ -370,6 +403,12 @@ class ProximaRepl {
 
     return registry;
   }
+
+  /// Identifies a run of dropped messages so an identical run reuses its
+  /// summary instead of paying for it again.
+  static String _summaryCacheKey(List<Message> dropped) =>
+      '${dropped.length}:${dropped.first.content.hashCode}:'
+      '${dropped.last.content.hashCode}';
 
   /// Rebuilds the shared ignore rules for the current turn.
   ///

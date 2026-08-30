@@ -5,6 +5,18 @@ import 'token_budget.dart';
 int estimateTokens(String text) => (text.length / 4).ceil();
 
 /// Three-pass context compaction strategy.
+/// Summarises a run of messages that is about to be dropped.
+///
+/// Returns null when no summary is available, in which case the caller falls
+/// back to plain truncation.
+typedef HistorySummarizer = Future<String?> Function(List<Message> dropped);
+
+/// Tokens held back from the history budget for an injected summary.
+///
+/// Matches `SubagentRunner.runSummarizer`'s default `maxTokens`, so a summary
+/// of the maximum size still fits inside the space reserved for it.
+const int summaryReserveTokens = 512;
+
 class Compaction {
   /// Pass 1: Prune large tool results that exceed the per-result budget.
   static List<Message> pruneToolResults(
@@ -28,8 +40,9 @@ class Compaction {
   /// Falls back to truncation immediately if anything goes wrong.
   static List<Message> truncateHistory(
     List<Message> messages,
-    int maxHistoryTokens,
-  ) {
+    int maxHistoryTokens, {
+    List<Message>? dropped,
+  }) {
     var total = messages.fold(0, (sum, m) => sum + estimateTokens(m.content));
 
     if (total <= maxHistoryTokens) return messages;
@@ -38,6 +51,7 @@ class Compaction {
     final result = List<Message>.from(messages);
     while (total > maxHistoryTokens && result.length > 2) {
       final removed = result.removeAt(0);
+      dropped?.add(removed);
       total -= estimateTokens(removed.content);
     }
 
@@ -124,16 +138,69 @@ class Compaction {
     ];
   }
 
-  /// Apply all three passes in sequence.
-  static List<Message> compact(
+  /// Apply all passes in sequence.
+  ///
+  /// When [summarizer] is supplied and Pass 2 has to discard messages, the
+  /// discarded run is summarised and the summary pinned to the front of the
+  /// history, so the model keeps the gist of what it can no longer see.
+  /// Without a summarizer — tests, offline use, a failed call — behaviour is
+  /// exactly the plain truncation it has always been.
+  static Future<List<Message>> compact(
     List<Message> messages,
     TokenBudget budget,
     String query, {
     Map<String, String> fileCache = const {},
-  }) {
+    HistorySummarizer? summarizer,
+  }) async {
     var result = deduplicateFileReads(messages, fileCache);
     result = pruneToolResults(result, budget.toolResults ~/ 4);
-    result = truncateHistory(result, budget.conversationHistory);
+
+    // Decide against the *real* budget first. Reserving unconditionally would
+    // discard messages — and pay for a summary — for histories that already
+    // fit, and would retain less than plain truncation if the summary failed.
+    final fitsAsIs =
+        result.fold(0, (sum, m) => sum + estimateTokens(m.content)) <=
+        budget.conversationHistory;
+    final reserve = (summarizer == null || fitsAsIs) ? 0 : summaryReserveTokens;
+
+    final dropped = <Message>[];
+    result = truncateHistory(
+      result,
+      budget.conversationHistory - reserve,
+      dropped: dropped,
+    );
+
+    if (summarizer != null && dropped.isNotEmpty) {
+      // A summarisation failure must never fail the turn — it costs context,
+      // not correctness, so fall back to the plain truncation already applied.
+      String? summary;
+      try {
+        summary = await summarizer(dropped);
+      } catch (_) {
+        summary = null;
+      }
+      if (summary != null && summary.trim().isNotEmpty) {
+        // Clip a summary that overruns its reserve — the model is asked for
+        // 3-5 bullets but is not bound by that. The prefix counts against the
+        // reserve too, or the injected message overshoots by its length.
+        const prefix =
+            '[Earlier context summary — the messages it covers have been '
+            'dropped to stay within budget]\n';
+        final maxChars = (summaryReserveTokens * 4) - prefix.length;
+        final clipped = summary.length > maxChars
+            ? '${summary.substring(0, maxChars)}…'
+            : summary;
+        // Filter *before* prepending: the summary stands in for messages that
+        // are already gone, so it must not compete with retained ones for a
+        // slot in the top-N.
+        result = relevanceFilter(result, query, 100);
+        return [
+          Message(role: MessageRole.user, content: '$prefix$clipped'),
+          ...result,
+        ];
+      }
+    }
+
     result = relevanceFilter(result, query, 100);
     return result;
   }

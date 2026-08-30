@@ -245,6 +245,7 @@ openai_api_key: sk-proj-...     # takes precedence over $OPENAI_API_KEY
 openai_base_url: https://api.openai.com/v1   # or any OpenAI-compatible endpoint
 openai_context_window: 32768    # optional; override for custom endpoints
 check_for_updates: true         # check GitHub for a newer release on startup
+summarize_on_compact: true      # summarize dropped history instead of discarding it
 ollama_base_url: http://localhost:11434
 plugin_dirs:                   # additional plugin search paths
   - .proxima/plugins

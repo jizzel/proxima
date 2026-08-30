@@ -11,6 +11,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.6.1] — 2026-08-30
+
+### Fixed
+
+- **A credential pasted into a prompt was stored verbatim** — found by testing the shipped binary. Masking covered tool *arguments*, so a key typed into a message sat unmasked in `~/.proxima/sessions/*.json`. User and assistant content is now masked — with the bare-scheme rule tightened so it needs a credential-shaped token (a digit, base64/URL punctuation, or mid-token case mixing) rather than mere length, which had turned `implement basic authentication middleware` into `implement *** middleware`. Tool results are still left alone so `--resume` replays real file contents rather than making the model re-run tools to recover them. `ToolCall.toJson()` is masked for the same reason, closing the last unmasked serialisation boundary
+- **Invalid `--model` values reported as internal faults** — `⚠ Unexpected error: Invalid argument(s): Unknown provider "gemini".` read like a crash for what is a configuration mistake. Now `⚠ Unknown provider "gemini".` with a hint about the `provider/model` form, and the REPL resets the agent loop so the user can switch model and retry
+- **The write critic reviewed an empty patch** — it read `content` or a `patch` argument, but `patch_file`'s schema is `old_str`/`new_str` and no tool has ever had a `patch` argument. Every `patch_file` review therefore received an empty string and reported "the proposed change is empty or missing" instead of reviewing the edit. The edit is now rendered as a before/after diff
+- **`git_status` failed outside a repository** — a freshly scaffolded project has no git repo, and the tool threw a hard error for that ordinary condition. It now reports `Not a git repository.` so the model can act on it
+- **Every Nth message was silently dropped in long sessions** — `iterationCount` is a persisted session field that was reset only after a *failed* turn, so it accumulated across successful ones. Once it reached the cap the loop guard was already false on entry: the body never ran and the user's message, already appended to history, was never sent to the model. The turn then failed, which reset the counter, so the next message worked — the symptom was an occasional message doing nothing at all. Now reset per turn, matching the documented per-request semantics
+- **The iteration cap interrupted normal multi-file work** — the default of 10 was tuned for single-file edits, but the system prompt directs the agent to verify every write by reading the file back, so each file costs two iterations. A seven-file scaffold hit the cap four times. Raised to 25, and budget exhaustion is no longer reported as a failure: it returns the new `TaskStatus.budgetExhausted` and goes through a new `AgentCallbacks.onNotice`, rendered dim rather than red, so API callers can distinguish a turn that ran out of steps from one that actually failed. The message says how to continue and names both config locations. Runaway loops are still bounded, and the stuck and spinning detectors fire long before this
+
+---
+
 ## [1.6.0] — 2026-08-30
 
 ### Added
@@ -23,12 +36,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **A credential pasted into a prompt was stored verbatim** — found by testing the shipped binary. Masking covered tool *arguments*, so a key typed into a message sat unmasked in `~/.proxima/sessions/*.json`. User and assistant content is now masked — with the bare-scheme rule tightened so it needs a credential-shaped token (a digit, base64/URL punctuation, or mid-token case mixing) rather than mere length, which had turned `implement basic authentication middleware` into `implement *** middleware`. Tool results are still left alone so `--resume` replays real file contents rather than making the model re-run tools to recover them. `ToolCall.toJson()` is masked for the same reason, closing the last unmasked serialisation boundary
-- **Invalid `--model` values reported as internal faults** — `⚠ Unexpected error: Invalid argument(s): Unknown provider "gemini".` read like a crash for what is a configuration mistake. Now `⚠ Unknown provider "gemini".` with a hint about the `provider/model` form, and the REPL resets the agent loop so the user can switch model and retry
-- **The write critic reviewed an empty patch** — it read `content` or a `patch` argument, but `patch_file`'s schema is `old_str`/`new_str` and no tool has ever had a `patch` argument. Every `patch_file` review therefore received an empty string and reported "the proposed change is empty or missing" instead of reviewing the edit. The edit is now rendered as a before/after diff
-- **`git_status` failed outside a repository** — a freshly scaffolded project has no git repo, and the tool threw a hard error for that ordinary condition. It now reports `Not a git repository.` so the model can act on it
-- **Every Nth message was silently dropped in long sessions** — `iterationCount` is a persisted session field that was reset only after a *failed* turn, so it accumulated across successful ones. Once it reached the cap the loop guard was already false on entry: the body never ran and the user's message, already appended to history, was never sent to the model. The turn then failed, which reset the counter, so the next message worked — the symptom was an occasional message doing nothing at all. Now reset per turn, matching the documented per-request semantics
-- **The iteration cap interrupted normal multi-file work** — the default of 10 was tuned for single-file edits, but the system prompt directs the agent to verify every write by reading the file back, so each file costs two iterations. A seven-file scaffold hit the cap four times. Raised to 25, and budget exhaustion is no longer reported as a failure: it returns the new `TaskStatus.budgetExhausted` and goes through a new `AgentCallbacks.onNotice`, rendered dim rather than red, so API callers can distinguish a turn that ran out of steps from one that actually failed. The message says how to continue and names both config locations. Runaway loops are still bounded, and the stuck and spinning detectors fire long before this
 - **CI pinned to Dart 3.11.1** — both workflows used `sdk: stable`, so a formatter change between SDK releases failed `dart format --set-exit-if-changed` on all three platforms for code that formatted cleanly against the SDK named in `pubspec.yaml`. The pin makes formatting reproducible locally; raise it and the pubspec constraint together
 - **Spinning detection interrupted legitimate exploration** — `isSpinning` fired on any six consecutive read-only calls without checking whether they targeted the same thing, so reading six *different* files on a small project was indistinguishable from looping. Observed twice in one session on a six-file project, blocking the task both times. It now also requires the window to be repetitive (fewer than four distinct call fingerprints). Three existing tests had encoded the wrong behaviour and were corrected
 - **`/files` ignored reads** — it matched only `write_file`/`patch_file`/`delete_file`, so it reported "No files accessed this session" after reading a file, while documented as "files read or written"
@@ -37,6 +44,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **OpenAI bypassed its own transport helper** — a previous change replaced `transportPost`/`transportSend` with raw client calls, and the streaming retry had no error guard at all, so a transport failure there escaped as a raw `ClientException`. This is the exact bug class `transport.dart` exists to prevent
 - **Inconsistent error classification across providers** — Anthropic mapped 403 to `unknown` rather than `auth`, so a revoked key triggered a pointless fallback to a secondary that would also fail (`FallbackProvider` treats `auth` as non-retryable). Ollama mapped *everything* to `unknown`, leaving retry logic nothing to act on for a rate-limited remote instance. All three providers now classify identically
 - **`write_plan` threw a raw `TypeError`** on a missing or non-string `content`, escaping the `ToolError` taxonomy the agent loop uses to classify failures
+
+---
 
 ---
 
@@ -363,7 +372,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Install script (`install.sh`) with unified curl/wget fetch function
 - LICENSE, CONTRIBUTING.md, and CHANGELOG
 
-[Unreleased]: https://github.com/jizzel/proxima/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/jizzel/proxima/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/jizzel/proxima/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/jizzel/proxima/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/jizzel/proxima/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jizzel/proxima/compare/v1.3.0...v1.4.0
